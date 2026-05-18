@@ -33,7 +33,7 @@ runs:
       shell: micromamba-shell {0}
       run: |
         ARCH=$(python -c "
-        import os, platform
+        import platform
         m = platform.machine()
         s = platform.system()
         mapping = {

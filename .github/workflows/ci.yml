@@ -20,7 +20,7 @@ jobs:
 
       - name: Verify caget is available
         shell: micromamba-shell {0}
-        run: caget --version || caget -h 2>&1 | head -3
+        run: which caget && which caput && which softIocPVA
 
       - name: Start softIoc and read PVs
         uses: ./start-softioc
@@ -48,7 +48,7 @@ jobs:
 
       - name: Verify pvxs tools are available
         shell: micromamba-shell {0}
-        run: pvget --version || pvget -h 2>&1 | head -3
+        run: which pvget && which pvput && which softIocPVX
 
       - name: Start softIocPVX and read PVs
         uses: ./start-softioc

@@ -52,7 +52,6 @@ Starts a `softIocPVA` (or `softIocPVX`) instance in the background and waits unt
     use-pvxs: 'false'           # set 'true' to use softIocPVX
     wait-pv: 'TEST:STATUS'      # poll this PV until the IOC is up
     wait-timeout: '10'          # fallback sleep if wait-pv is not set
-    environment-name: epics
 ```
 
 `wait-pv` is recommended — the step exits as soon as `caget` succeeds (up to 30 attempts, 1 s apart) instead of waiting a fixed time.

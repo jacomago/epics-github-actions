@@ -25,45 +25,48 @@ inputs:
     description: Seconds to wait when wait-pv is not set
     required: false
     default: '10'
-  environment-name:
-    description: conda environment name used in setup-epics / setup-pvxs
-    required: false
-    default: epics
 
 runs:
   using: composite
   steps:
     - name: Start softIoc
       shell: micromamba-shell {0}
+      env:
+        DB_FILE: ${{ inputs.db-file }}
+        MACROS: ${{ inputs.macros }}
+        IOC_NAME: ${{ inputs.ioc-name }}
+        USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
-        BINARY=${{ inputs.use-pvxs == 'true' && 'softIocPVX' || 'softIocPVA' }}
+        BINARY="softIocPVA"
+        [ "$USE_PVXS" = "true" ] && BINARY="softIocPVX"
 
-        MACRO_ARGS=""
-        if [ -n "${{ inputs.macros }}" ]; then
-          MACRO_ARGS="-m '${{ inputs.macros }}'"
-        fi
+        ARGS=(-n "$IOC_NAME")
+        [ -n "$MACROS" ] && ARGS+=(-m "$MACROS")
+        ARGS+=("$DB_FILE")
 
-        eval "${BINARY} -n '${{ inputs.ioc-name }}' ${MACRO_ARGS} '${{ inputs.db-file }}'" \
-          > /tmp/softioc.log 2>&1 &
+        "$BINARY" "${ARGS[@]}" > "$RUNNER_TEMP/softioc.log" 2>&1 &
         echo "SOFTIOC_PID=$!" >> "$GITHUB_ENV"
-        echo "Started ${BINARY} with PID $!"
+        echo "Started $BINARY with PID $!"
 
     - name: Wait for IOC to be ready
       shell: micromamba-shell {0}
+      env:
+        WAIT_PV: ${{ inputs.wait-pv }}
+        WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
       run: |
-        if [ -n "${{ inputs.wait-pv }}" ]; then
-          echo "Polling PV: ${{ inputs.wait-pv }}"
+        if [ -n "$WAIT_PV" ]; then
+          echo "Polling PV: $WAIT_PV"
           for i in $(seq 1 30); do
-            if caget -w 1 '${{ inputs.wait-pv }}' > /dev/null 2>&1; then
+            if caget -w 1 "$WAIT_PV" > /dev/null 2>&1; then
               echo "IOC ready after ${i}s"
               exit 0
             fi
             sleep 1
           done
           echo "::error::IOC did not become ready within 30s"
-          cat /tmp/softioc.log
+          cat "$RUNNER_TEMP/softioc.log"
           exit 1
         else
-          echo "No wait-pv specified, sleeping ${{ inputs.wait-timeout }}s"
-          sleep '${{ inputs.wait-timeout }}'
+          echo "No wait-pv specified, sleeping ${WAIT_TIMEOUT}s"
+          sleep "$WAIT_TIMEOUT"
         fi
