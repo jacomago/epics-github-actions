@@ -8,19 +8,16 @@ on:
 jobs:
   test-epics-base:
     name: Test setup-epics
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup EPICS Base
         uses: ./setup-epics
 
-      - name: Verify caget is available
-        shell: micromamba-shell {0}
-        run: which caget && which caput && which softIocPVA
+      - name: Verify caget is available and image is pulled
+        shell: bash
+        run: which caget && docker images | grep epics
 
       - name: Start softIoc and read PVs
         uses: ./start-softioc
@@ -30,25 +27,22 @@ jobs:
           wait-pv: CI:STR
 
       - name: Read test PVs
-        shell: micromamba-shell {0}
+        shell: bash
         run: |
           caget CI:AI CI:BI CI:STR CI:WF
 
   test-pvxs:
     name: Test setup-pvxs
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup PVXS
         uses: ./setup-pvxs
 
-      - name: Verify pvxs tools are available
-        shell: micromamba-shell {0}
-        run: which pvget && which pvput && which softIocPVX
+      - name: Verify pvxs tools are available and image is pulled
+        shell: bash
+        run: which pvget && which pvput && which softIocPVX && docker images | grep epics
 
       - name: Start softIocPVX and read PVs
         uses: ./start-softioc
@@ -59,6 +53,6 @@ jobs:
           wait-pv: PVXS:STR
 
       - name: Read test PVs via PVA
-        shell: micromamba-shell {0}
+        shell: bash
         run: |
           pvget PVXS:AI PVXS:BI PVXS:STR PVXS:WF

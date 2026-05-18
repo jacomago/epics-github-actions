@@ -1,38 +1,43 @@
 name: Setup EPICS Base
-description: Install epics-base via micromamba (conda-forge)
+description: Pull a pre-built EPICS Docker image and install thin wrapper scripts on PATH
 
 inputs:
-  epics-version:
-    description: epics-base conda package version (e.g. "7.0.8")
+  image:
+    description: Docker image containing epics-base (e.g. ghcr.io/epics-containers/epics-base:7.0.8r1.0)
     required: false
-    default: ''
-  environment-name:
-    description: conda environment name
+    default: 'ghcr.io/epics-containers/epics-base:7.0.8r1.0'
+  network-name:
+    description: Docker network name used for CA/PVA communication
     required: false
-    default: epics
+    default: 'epics-net'
 
 outputs:
   epics-host-arch:
-    description: EPICS_HOST_ARCH value
-    value: ${{ steps.env.outputs.epics-host-arch }}
+    description: EPICS_HOST_ARCH value for the current runner
+    value: ${{ steps.arch.outputs.epics-host-arch }}
 
 runs:
   using: composite
   steps:
-    - name: Setup micromamba
-      uses: mamba-org/setup-micromamba@v2
-      with:
-        environment-name: ${{ inputs.environment-name }}
-        create-args: >-
-          ${{ inputs.epics-version != '' && format('epics-base={0}', inputs.epics-version) || 'epics-base' }}
-        init-shell: bash
-        cache-environment: true
-
-    - name: Export EPICS environment variables
-      id: env
-      shell: micromamba-shell {0}
+    - name: Pull EPICS Docker image
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
       run: |
-        ARCH=$(python -c "
+        docker pull "$IMAGE"
+
+    - name: Create Docker network
+      shell: bash
+      env:
+        NETWORK: ${{ inputs.network-name }}
+      run: |
+        docker network create "$NETWORK" || true
+
+    - name: Detect EPICS_HOST_ARCH
+      id: arch
+      shell: bash
+      run: |
+        ARCH=$(python3 -c "
         import platform
         m = platform.machine()
         s = platform.system()
@@ -46,3 +51,32 @@ runs:
         ")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
+
+    - name: Export Docker image and network to environment
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        NETWORK: ${{ inputs.network-name }}
+      run: |
+        echo "EPICS_DOCKER_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+        echo "EPICS_DOCKER_NETWORK=${NETWORK}" >> "$GITHUB_ENV"
+
+    - name: Write EPICS wrapper scripts
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        NETWORK: ${{ inputs.network-name }}
+      run: |
+        WRAPPER_DIR="${RUNNER_TEMP}/epics-wrappers"
+        mkdir -p "$WRAPPER_DIR"
+
+        for CMD in caget caput camonitor cainfo softIocPVA; do
+          cat > "${WRAPPER_DIR}/${CMD}" <<EOF
+        #!/usr/bin/env bash
+        exec docker run --rm --network "${NETWORK}" "${IMAGE}" ${CMD} "\$@"
+        EOF
+          chmod +x "${WRAPPER_DIR}/${CMD}"
+        done
+
+        echo "${WRAPPER_DIR}" >> "$GITHUB_PATH"
+        echo "Wrapper scripts installed in ${WRAPPER_DIR}"

@@ -1,9 +1,9 @@
 name: Start softIoc
-description: Start a softIocPVA (or softIocPVX) instance in the background
+description: Start a softIocPVA (or softIocPVX) instance as a detached Docker container
 
 inputs:
   db-file:
-    description: Path to the .db file to load
+    description: Path to the .db file to load (relative to workspace root)
     required: true
   macros:
     description: Macro string passed to -m (e.g. "P=TEST:,R=REC:")
@@ -25,31 +25,48 @@ inputs:
     description: Seconds to wait when wait-pv is not set
     required: false
     default: '10'
+  container-name:
+    description: Name to assign to the softIoc Docker container
+    required: false
+    default: 'softioc'
 
 runs:
   using: composite
   steps:
-    - name: Start softIoc
-      shell: micromamba-shell {0}
+    - name: Start softIoc container
+      shell: bash
       env:
         DB_FILE: ${{ inputs.db-file }}
         MACROS: ${{ inputs.macros }}
         IOC_NAME: ${{ inputs.ioc-name }}
         USE_PVXS: ${{ inputs.use-pvxs }}
+        CONTAINER_NAME: ${{ inputs.container-name }}
       run: |
         BINARY="softIocPVA"
-        [ "$USE_PVXS" = "true" ] && BINARY="softIocPVX"
+        if [ "$USE_PVXS" = "true" ]; then
+          BINARY="softIocPVX"
+          IMAGE="${PVXS_DOCKER_IMAGE:-${EPICS_DOCKER_IMAGE}}"
+        else
+          IMAGE="${EPICS_DOCKER_IMAGE}"
+        fi
 
-        ARGS=(-n "$IOC_NAME")
-        [ -n "$MACROS" ] && ARGS+=(-m "$MACROS")
-        ARGS+=("$DB_FILE")
+        DB_ARGS=(-v "${PWD}/${DB_FILE}:/db/ioc.db:ro")
+        IOC_ARGS=(-n "$IOC_NAME")
+        [ -n "$MACROS" ] && IOC_ARGS+=(-m "$MACROS")
+        IOC_ARGS+=(/db/ioc.db)
 
-        "$BINARY" "${ARGS[@]}" > "$RUNNER_TEMP/softioc.log" 2>&1 &
-        echo "SOFTIOC_PID=$!" >> "$GITHUB_ENV"
-        echo "Started $BINARY with PID $!"
+        docker run -d \
+          --name "$CONTAINER_NAME" \
+          --network "${EPICS_DOCKER_NETWORK}" \
+          "${DB_ARGS[@]}" \
+          "$IMAGE" \
+          "$BINARY" "${IOC_ARGS[@]}"
+
+        echo "SOFTIOC_CONTAINER=${CONTAINER_NAME}" >> "$GITHUB_ENV"
+        echo "Started ${BINARY} container '${CONTAINER_NAME}'"
 
     - name: Wait for IOC to be ready
-      shell: micromamba-shell {0}
+      shell: bash
       env:
         WAIT_PV: ${{ inputs.wait-pv }}
         WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
@@ -64,7 +81,7 @@ runs:
             sleep 1
           done
           echo "::error::IOC did not become ready within 30s"
-          cat "$RUNNER_TEMP/softioc.log"
+          docker logs "$SOFTIOC_CONTAINER" || true
           exit 1
         else
           echo "No wait-pv specified, sleeping ${WAIT_TIMEOUT}s"
