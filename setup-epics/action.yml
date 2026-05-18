@@ -1,0 +1,48 @@
+name: Setup EPICS Base
+description: Install epics-base via micromamba (conda-forge)
+
+inputs:
+  epics-version:
+    description: epics-base conda package version (e.g. "7.0.8")
+    required: false
+    default: ''
+  environment-name:
+    description: conda environment name
+    required: false
+    default: epics
+
+outputs:
+  epics-host-arch:
+    description: EPICS_HOST_ARCH value
+    value: ${{ steps.env.outputs.epics-host-arch }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup micromamba
+      uses: mamba-org/setup-micromamba@v2
+      with:
+        environment-name: ${{ inputs.environment-name }}
+        create-args: >-
+          ${{ inputs.epics-version != '' && format('epics-base={0}', inputs.epics-version) || 'epics-base' }}
+        init-shell: bash
+        cache-environment: true
+
+    - name: Export EPICS environment variables
+      id: env
+      shell: micromamba-shell {0}
+      run: |
+        ARCH=$(python -c "
+        import os, platform
+        m = platform.machine()
+        s = platform.system()
+        mapping = {
+            ('Linux',  'x86_64'):  'linux-x86_64',
+            ('Linux',  'aarch64'): 'linux-aarch64',
+            ('Darwin', 'x86_64'):  'darwin-x86_64',
+            ('Darwin', 'arm64'):   'darwin-aarch64',
+        }
+        print(mapping.get((s, m), f'{s.lower()}-{m}'))
+        ")
+        echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
+        echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"

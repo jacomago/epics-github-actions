@@ -1,0 +1,29 @@
+record(ai, "$(P)AI") {
+    field(DESC, "Analog input test record")
+    field(EGU,  "counts")
+    field(HIHI, "90")
+    field(HIGH, "80")
+    field(LOW,  "20")
+    field(LOLO, "10")
+    field(HHSV, "MAJOR")
+    field(HSV,  "MINOR")
+    field(LSV,  "MINOR")
+    field(LLSV, "MAJOR")
+}
+
+record(bi, "$(P)BI") {
+    field(DESC, "Binary input test record")
+    field(ZNAM, "Off")
+    field(ONAM, "On")
+}
+
+record(stringin, "$(P)STR") {
+    field(DESC, "String test record")
+    field(VAL,  "hello")
+}
+
+record(waveform, "$(P)WF") {
+    field(DESC, "Waveform test record")
+    field(FTVL, "DOUBLE")
+    field(NELM, "10")
+}

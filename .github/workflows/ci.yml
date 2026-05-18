@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-epics-base:
+    name: Test setup-epics
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup EPICS Base
+        uses: ./setup-epics
+
+      - name: Verify caget is available
+        shell: micromamba-shell {0}
+        run: caget --version || caget -h 2>&1 | head -3
+
+      - name: Start softIoc and read PVs
+        uses: ./start-softioc
+        with:
+          db-file: test/test.db
+          macros: P=CI:
+          wait-pv: CI:STR
+
+      - name: Read test PVs
+        shell: micromamba-shell {0}
+        run: |
+          caget CI:AI CI:BI CI:STR CI:WF
+
+  test-pvxs:
+    name: Test setup-pvxs
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PVXS
+        uses: ./setup-pvxs
+
+      - name: Verify pvxs tools are available
+        shell: micromamba-shell {0}
+        run: pvget --version || pvget -h 2>&1 | head -3
+
+      - name: Start softIocPVX and read PVs
+        uses: ./start-softioc
+        with:
+          db-file: test/test.db
+          macros: P=PVXS:
+          use-pvxs: 'true'
+          wait-pv: PVXS:STR
+
+      - name: Read test PVs via PVA
+        shell: micromamba-shell {0}
+        run: |
+          pvget PVXS:AI PVXS:BI PVXS:STR PVXS:WF

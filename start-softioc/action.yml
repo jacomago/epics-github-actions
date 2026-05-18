@@ -1,0 +1,69 @@
+name: Start softIoc
+description: Start a softIocPVA (or softIocPVX) instance in the background
+
+inputs:
+  db-file:
+    description: Path to the .db file to load
+    required: true
+  macros:
+    description: Macro string passed to -m (e.g. "P=TEST:,R=REC:")
+    required: false
+    default: ''
+  ioc-name:
+    description: IOC name / prefix passed to -n
+    required: false
+    default: 'softioc'
+  use-pvxs:
+    description: Use softIocPVX (pvxs) instead of softIocPVA
+    required: false
+    default: 'false'
+  wait-pv:
+    description: CA/PVA PV name to poll until the IOC is ready (recommended)
+    required: false
+    default: ''
+  wait-timeout:
+    description: Seconds to wait when wait-pv is not set
+    required: false
+    default: '10'
+  environment-name:
+    description: conda environment name used in setup-epics / setup-pvxs
+    required: false
+    default: epics
+
+runs:
+  using: composite
+  steps:
+    - name: Start softIoc
+      shell: micromamba-shell {0}
+      run: |
+        BINARY=${{ inputs.use-pvxs == 'true' && 'softIocPVX' || 'softIocPVA' }}
+
+        MACRO_ARGS=""
+        if [ -n "${{ inputs.macros }}" ]; then
+          MACRO_ARGS="-m '${{ inputs.macros }}'"
+        fi
+
+        eval "${BINARY} -n '${{ inputs.ioc-name }}' ${MACRO_ARGS} '${{ inputs.db-file }}'" \
+          > /tmp/softioc.log 2>&1 &
+        echo "SOFTIOC_PID=$!" >> "$GITHUB_ENV"
+        echo "Started ${BINARY} with PID $!"
+
+    - name: Wait for IOC to be ready
+      shell: micromamba-shell {0}
+      run: |
+        if [ -n "${{ inputs.wait-pv }}" ]; then
+          echo "Polling PV: ${{ inputs.wait-pv }}"
+          for i in $(seq 1 30); do
+            if caget -w 1 '${{ inputs.wait-pv }}' > /dev/null 2>&1; then
+              echo "IOC ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::IOC did not become ready within 30s"
+          cat /tmp/softioc.log
+          exit 1
+        else
+          echo "No wait-pv specified, sleeping ${{ inputs.wait-timeout }}s"
+          sleep '${{ inputs.wait-timeout }}'
+        fi
