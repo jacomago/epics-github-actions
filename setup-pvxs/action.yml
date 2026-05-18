@@ -1,53 +1,80 @@
 name: Setup PVXS
-description: Install epics-base and pvxs via micromamba (conda-forge)
+description: Compile epics-base and pvxs from source and add them to PATH
 
 inputs:
   pvxs-version:
-    description: pvxs conda package version (e.g. "1.3.1")
+    description: PVXS git tag to build (e.g. "1.3.1")
     required: false
-    default: ''
+    default: '1.3.1'
   epics-version:
-    description: epics-base conda package version (e.g. "7.0.8")
+    description: EPICS base release version (e.g. "7.0.8")
     required: false
-    default: ''
-  environment-name:
-    description: conda environment name
+    default: '7.0.8'
+  install-prefix:
+    description: Directory where EPICS base and pvxs will be installed
     required: false
-    default: epics
+    default: '${{ github.workspace }}/.epics'
 
 outputs:
   epics-host-arch:
     description: EPICS_HOST_ARCH value
-    value: ${{ steps.env.outputs.epics-host-arch }}
+    value: ${{ steps.setup-epics.outputs.epics-host-arch }}
+  epics-base-path:
+    description: Path to the EPICS base installation
+    value: ${{ steps.setup-epics.outputs.epics-base-path }}
 
 runs:
   using: composite
   steps:
-    - name: Setup micromamba
-      uses: mamba-org/setup-micromamba@v2
+    - name: Setup EPICS base
+      id: setup-epics
+      uses: ./setup-epics
       with:
-        environment-name: ${{ inputs.environment-name }}
-        create-args: >-
-          ${{ inputs.pvxs-version   != '' && format('pvxs={0}',       inputs.pvxs-version)   || 'pvxs' }}
-          ${{ inputs.epics-version  != '' && format('epics-base={0}', inputs.epics-version)  || 'epics-base' }}
-        init-shell: bash
-        cache-environment: true
+        epics-version: ${{ inputs.epics-version }}
+        install-prefix: ${{ inputs.install-prefix }}
+
+    - name: Install cmake
+      shell: bash
+      run: |
+        if [ "$(uname)" = "Linux" ]; then
+          sudo apt-get install -y cmake
+        fi
+        # macOS: cmake is pre-installed on GitHub runners
+
+    - name: Restore pvxs cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.install-prefix }}
+        key: pvxs-${{ inputs.pvxs-version }}-epics-${{ inputs.epics-version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Clone and build pvxs
+      shell: bash
+      env:
+        INSTALL_PREFIX: ${{ inputs.install-prefix }}
+        PVXS_VERSION: ${{ inputs.pvxs-version }}
+      run: |
+        if [ ! -f "$INSTALL_PREFIX/bin/$EPICS_HOST_ARCH/pvget" ]; then
+          echo "Building pvxs ${PVXS_VERSION} into ${INSTALL_PREFIX}"
+          git clone --branch "$PVXS_VERSION" --depth 1 \
+            https://github.com/mdavidsaver/pvxs.git
+          cmake -S pvxs -B pvxs/build \
+            -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" \
+            -DEPICS_BASE="$INSTALL_PREFIX"
+          cmake --build pvxs/build --parallel
+          cmake --install pvxs/build
+        else
+          echo "pvxs already built at ${INSTALL_PREFIX}, skipping compilation"
+        fi
 
     - name: Export EPICS environment variables
-      id: env
-      shell: micromamba-shell {0}
+      shell: bash
+      env:
+        INSTALL_PREFIX: ${{ inputs.install-prefix }}
       run: |
-        ARCH=$(python -c "
-        import platform
-        m = platform.machine()
-        s = platform.system()
-        mapping = {
-            ('Linux',  'x86_64'):  'linux-x86_64',
-            ('Linux',  'aarch64'): 'linux-aarch64',
-            ('Darwin', 'x86_64'):  'darwin-x86_64',
-            ('Darwin', 'arm64'):   'darwin-aarch64',
-        }
-        print(mapping.get((s, m), f'{s.lower()}-{m}'))
-        ")
-        echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
-        echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
+        echo "EPICS_BASE=${INSTALL_PREFIX}" >> "$GITHUB_ENV"
+        echo "${INSTALL_PREFIX}/bin/${EPICS_HOST_ARCH}" >> "$GITHUB_PATH"
+        if [ "$(uname)" = "Linux" ]; then
+          echo "LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib/${EPICS_HOST_ARCH}:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        else
+          echo "DYLD_LIBRARY_PATH=${INSTALL_PREFIX}/lib/${EPICS_HOST_ARCH}:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        fi

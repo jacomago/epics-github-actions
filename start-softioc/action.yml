@@ -30,7 +30,7 @@ runs:
   using: composite
   steps:
     - name: Start softIoc
-      shell: micromamba-shell {0}
+      shell: bash
       env:
         DB_FILE: ${{ inputs.db-file }}
         MACROS: ${{ inputs.macros }}
@@ -49,7 +49,7 @@ runs:
         echo "Started $BINARY with PID $!"
 
     - name: Wait for IOC to be ready
-      shell: micromamba-shell {0}
+      shell: bash
       env:
         WAIT_PV: ${{ inputs.wait-pv }}
         WAIT_TIMEOUT: ${{ inputs.wait-timeout }}

@@ -1,48 +1,84 @@
 name: Setup EPICS Base
-description: Install epics-base via micromamba (conda-forge)
+description: Compile epics-base from source and add it to PATH
 
 inputs:
   epics-version:
-    description: epics-base conda package version (e.g. "7.0.8")
+    description: EPICS base release version (e.g. "7.0.8")
     required: false
-    default: ''
-  environment-name:
-    description: conda environment name
+    default: '7.0.8'
+  install-prefix:
+    description: Directory where EPICS base will be installed
     required: false
-    default: epics
+    default: '${{ github.workspace }}/.epics'
 
 outputs:
   epics-host-arch:
     description: EPICS_HOST_ARCH value
-    value: ${{ steps.env.outputs.epics-host-arch }}
+    value: ${{ steps.detect-arch.outputs.epics-host-arch }}
+  epics-base-path:
+    description: Path to the EPICS base installation
+    value: ${{ steps.detect-arch.outputs.epics-base-path }}
 
 runs:
   using: composite
   steps:
-    - name: Setup micromamba
-      uses: mamba-org/setup-micromamba@v2
+    - name: Detect EPICS host arch
+      id: detect-arch
+      shell: bash
+      env:
+        INSTALL_PREFIX: ${{ inputs.install-prefix }}
+      run: |
+        case "$(uname -s)-$(uname -m)" in
+          Linux-x86_64)   EPICS_HOST_ARCH=linux-x86_64 ;;
+          Linux-aarch64)  EPICS_HOST_ARCH=linux-aarch64 ;;
+          Darwin-x86_64)  EPICS_HOST_ARCH=darwin-x86_64 ;;
+          Darwin-arm64)   EPICS_HOST_ARCH=darwin-aarch64 ;;
+          *)              EPICS_HOST_ARCH="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)" ;;
+        esac
+        echo "EPICS_HOST_ARCH=${EPICS_HOST_ARCH}" >> "$GITHUB_ENV"
+        echo "epics-host-arch=${EPICS_HOST_ARCH}" >> "$GITHUB_OUTPUT"
+        echo "epics-base-path=${INSTALL_PREFIX}" >> "$GITHUB_OUTPUT"
+
+    - name: Install build dependencies
+      shell: bash
+      run: |
+        if [ "$(uname)" = "Linux" ]; then
+          sudo apt-get install -y --no-install-recommends libreadline-dev perl
+        fi
+        # macOS already has readline via Xcode CLT and perl pre-installed
+
+    - name: Restore EPICS base cache
+      uses: actions/cache@v4
       with:
-        environment-name: ${{ inputs.environment-name }}
-        create-args: >-
-          ${{ inputs.epics-version != '' && format('epics-base={0}', inputs.epics-version) || 'epics-base' }}
-        init-shell: bash
-        cache-environment: true
+        path: ${{ inputs.install-prefix }}
+        key: epics-base-${{ inputs.epics-version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Download and compile EPICS base
+      shell: bash
+      env:
+        INSTALL_PREFIX: ${{ inputs.install-prefix }}
+        EPICS_VERSION: ${{ inputs.epics-version }}
+      run: |
+        if [ ! -f "$INSTALL_PREFIX/bin/$EPICS_HOST_ARCH/caget" ]; then
+          echo "Building EPICS base ${EPICS_VERSION} into ${INSTALL_PREFIX}"
+          curl -fsSL "https://github.com/epics-base/epics-base/archive/refs/tags/R${EPICS_VERSION}.tar.gz" \
+            | tar xz
+          cd "epics-base-R${EPICS_VERSION}"
+          make -j$(nproc 2>/dev/null || sysctl -n hw.logicalcpu) \
+            INSTALL_LOCATION="$INSTALL_PREFIX"
+        else
+          echo "EPICS base already built at ${INSTALL_PREFIX}, skipping compilation"
+        fi
 
     - name: Export EPICS environment variables
-      id: env
-      shell: micromamba-shell {0}
+      shell: bash
+      env:
+        INSTALL_PREFIX: ${{ inputs.install-prefix }}
       run: |
-        ARCH=$(python -c "
-        import platform
-        m = platform.machine()
-        s = platform.system()
-        mapping = {
-            ('Linux',  'x86_64'):  'linux-x86_64',
-            ('Linux',  'aarch64'): 'linux-aarch64',
-            ('Darwin', 'x86_64'):  'darwin-x86_64',
-            ('Darwin', 'arm64'):   'darwin-aarch64',
-        }
-        print(mapping.get((s, m), f'{s.lower()}-{m}'))
-        ")
-        echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
-        echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
+        echo "EPICS_BASE=${INSTALL_PREFIX}" >> "$GITHUB_ENV"
+        echo "${INSTALL_PREFIX}/bin/${EPICS_HOST_ARCH}" >> "$GITHUB_PATH"
+        if [ "$(uname)" = "Linux" ]; then
+          echo "LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib/${EPICS_HOST_ARCH}:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        else
+          echo "DYLD_LIBRARY_PATH=${INSTALL_PREFIX}/lib/${EPICS_HOST_ARCH}:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        fi

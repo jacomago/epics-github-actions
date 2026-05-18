@@ -9,6 +9,7 @@ jobs:
   test-epics-base:
     name: Test setup-epics
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -19,7 +20,7 @@ jobs:
         uses: ./setup-epics
 
       - name: Verify caget is available
-        shell: micromamba-shell {0}
+        shell: bash
         run: which caget && which caput && which softIocPVA
 
       - name: Start softIoc and read PVs
@@ -30,13 +31,14 @@ jobs:
           wait-pv: CI:STR
 
       - name: Read test PVs
-        shell: micromamba-shell {0}
+        shell: bash
         run: |
           caget CI:AI CI:BI CI:STR CI:WF
 
   test-pvxs:
     name: Test setup-pvxs
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -47,7 +49,7 @@ jobs:
         uses: ./setup-pvxs
 
       - name: Verify pvxs tools are available
-        shell: micromamba-shell {0}
+        shell: bash
         run: which pvget && which pvput && which softIocPVX
 
       - name: Start softIocPVX and read PVs
@@ -59,6 +61,6 @@ jobs:
           wait-pv: PVXS:STR
 
       - name: Read test PVs via PVA
-        shell: micromamba-shell {0}
+        shell: bash
         run: |
           pvget PVXS:AI PVXS:BI PVXS:STR PVXS:WF
