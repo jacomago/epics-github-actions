@@ -3,7 +3,7 @@ description: Pull a pre-built EPICS Docker image and install thin wrapper script
 
 inputs:
   image:
-    description: Docker image containing epics-base (e.g. ghcr.io/epics-containers/epics-base:7.0.8r1.0)
+    description: Docker image containing EPICS Base
     required: false
     default: 'ghcr.io/epics-containers/epics-base:7.0.8r1.0'
   network-name:
@@ -13,8 +13,8 @@ inputs:
 
 outputs:
   epics-host-arch:
-    description: EPICS_HOST_ARCH value for the current runner
-    value: ${{ steps.arch.outputs.epics-host-arch }}
+    description: EPICS_HOST_ARCH value (e.g. linux-x86_64)
+    value: ${{ steps.env.outputs.epics-host-arch }}
 
 runs:
   using: composite
@@ -23,19 +23,20 @@ runs:
       shell: bash
       env:
         IMAGE: ${{ inputs.image }}
-      run: |
-        docker pull "$IMAGE"
+      run: docker pull "$IMAGE"
 
     - name: Create Docker network
       shell: bash
       env:
         NETWORK: ${{ inputs.network-name }}
-      run: |
-        docker network create "$NETWORK" || true
+      run: docker network create "$NETWORK" || true
 
-    - name: Detect EPICS_HOST_ARCH
-      id: arch
+    - name: Detect EPICS_HOST_ARCH and export Docker settings
+      id: env
       shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        NETWORK: ${{ inputs.network-name }}
       run: |
         ARCH=$(python3 -c "
         import platform
@@ -47,17 +48,10 @@ runs:
             ('Darwin', 'x86_64'):  'darwin-x86_64',
             ('Darwin', 'arm64'):   'darwin-aarch64',
         }
-        print(mapping.get((s, m), f'{s.lower()}-{m}'))
+        print(mapping.get((s, m), '{}-{}'.format(s.lower(), m)))
         ")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
-
-    - name: Export Docker image and network to environment
-      shell: bash
-      env:
-        IMAGE: ${{ inputs.image }}
-        NETWORK: ${{ inputs.network-name }}
-      run: |
         echo "EPICS_DOCKER_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
         echo "EPICS_DOCKER_NETWORK=${NETWORK}" >> "$GITHUB_ENV"
 
@@ -71,10 +65,8 @@ runs:
         mkdir -p "$WRAPPER_DIR"
 
         for CMD in caget caput camonitor cainfo softIocPVA; do
-          cat > "${WRAPPER_DIR}/${CMD}" <<EOF
-        #!/usr/bin/env bash
-        exec docker run --rm --network "${NETWORK}" "${IMAGE}" ${CMD} "\$@"
-        EOF
+          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" "%s" %s "$@"\n' \
+            "$NETWORK" "$IMAGE" "$CMD" > "${WRAPPER_DIR}/${CMD}"
           chmod +x "${WRAPPER_DIR}/${CMD}"
         done
 

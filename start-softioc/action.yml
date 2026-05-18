@@ -42,15 +42,14 @@ runs:
         USE_PVXS: ${{ inputs.use-pvxs }}
         CONTAINER_NAME: ${{ inputs.container-name }}
       run: |
-        BINARY="softIocPVA"
         if [ "$USE_PVXS" = "true" ]; then
           BINARY="softIocPVX"
           IMAGE="${PVXS_DOCKER_IMAGE:-${EPICS_DOCKER_IMAGE}}"
         else
+          BINARY="softIocPVA"
           IMAGE="${EPICS_DOCKER_IMAGE}"
         fi
 
-        DB_ARGS=(-v "${PWD}/${DB_FILE}:/db/ioc.db:ro")
         IOC_ARGS=(-n "$IOC_NAME")
         [ -n "$MACROS" ] && IOC_ARGS+=(-m "$MACROS")
         IOC_ARGS+=(/db/ioc.db)
@@ -58,7 +57,7 @@ runs:
         docker run -d \
           --name "$CONTAINER_NAME" \
           --network "${EPICS_DOCKER_NETWORK}" \
-          "${DB_ARGS[@]}" \
+          -v "${PWD}/${DB_FILE}:/db/ioc.db:ro" \
           "$IMAGE" \
           "$BINARY" "${IOC_ARGS[@]}"
 

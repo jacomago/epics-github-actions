@@ -24,7 +24,7 @@ Pulls a pre-built EPICS Docker image, creates a shared Docker network, and insta
 - `EPICS_DOCKER_IMAGE` — image used, consumed by `start-softioc`
 - `EPICS_DOCKER_NETWORK` — network name, consumed by `start-softioc`
 
-After this step, `caget`, `caput`, `camonitor`, `cainfo`, and `softIocPVA` are available as plain shell commands (each delegates to `docker run --rm --network <network> <image> <cmd>`).
+After this step, `caget`, `caput`, `camonitor`, `cainfo`, and `softIocPVA` are available as plain shell commands (each delegates to `docker run --rm --network <network> <image> <cmd>`). No `micromamba-shell` is required.
 
 ---
 
@@ -100,5 +100,5 @@ jobs:
    ```bash
    exec docker run --rm --network epics-net <image> <cmd> "$@"
    ```
-3. `start-softioc` launches the IOC as a named detached container on the same network, mounting the `.db` file read-only.
+3. `start-softioc` launches the IOC as a named detached container on the same network, mounting the `.db` file read-only at `/db/ioc.db`.
 4. All subsequent `caget`/`pvget` calls (via wrappers) reach the IOC container through the shared Docker network.
