@@ -1,25 +1,55 @@
 name: Setup EPICS Base
-description: Install epics-base via micromamba (conda-forge)
+description: >-
+  Install epics-base via conda (micromamba), a pre-built Docker image, or
+  compilation from source. Select the approach with the 'method' input.
 
 inputs:
+  method:
+    description: Installation method — 'conda', 'docker', or 'compile'
+    required: false
+    default: conda
+
+  # ── conda ──────────────────────────────────────────────────────────────
   epics-version:
-    description: epics-base conda package version (e.g. "7.0.8")
+    description: >-
+      epics-base version. conda: package version (e.g. "7.0.8").
+      compile: release tag without the leading R (e.g. "7.0.8").
+      Ignored for docker (version is encoded in the image tag).
     required: false
     default: ''
   environment-name:
-    description: conda environment name
+    description: conda environment name (conda method only)
     required: false
     default: epics
 
+  # ── docker ─────────────────────────────────────────────────────────────
+  image:
+    description: Docker image containing epics-base (docker method only)
+    required: false
+    default: 'ghcr.io/epics-containers/epics-base:7.0.8r1.0'
+  network-name:
+    description: Docker bridge network for CA/PVA communication (docker method only)
+    required: false
+    default: epics-net
+
+  # ── compile ────────────────────────────────────────────────────────────
+  install-prefix:
+    description: Directory to install compiled EPICS Base (compile method only)
+    required: false
+    default: '${{ github.workspace }}/.epics'
+
 outputs:
   epics-host-arch:
-    description: EPICS_HOST_ARCH value
-    value: ${{ steps.env.outputs.epics-host-arch }}
+    description: EPICS_HOST_ARCH value (e.g. linux-x86_64)
+    value: ${{ steps.arch-conda.outputs.epics-host-arch || steps.arch-native.outputs.epics-host-arch }}
 
 runs:
   using: composite
   steps:
+
+    # ── conda ──────────────────────────────────────────────────────────────
     - name: Setup micromamba
+      if: inputs.method == 'conda'
       uses: mamba-org/setup-micromamba@v2
       with:
         environment-name: ${{ inputs.environment-name }}
@@ -28,8 +58,9 @@ runs:
         init-shell: bash
         cache-environment: true
 
-    - name: Export EPICS environment variables
-      id: env
+    - name: Export arch and add conda env to PATH
+      if: inputs.method == 'conda'
+      id: arch-conda
       shell: micromamba-shell {0}
       run: |
         ARCH=$(python -c "
@@ -46,3 +77,91 @@ runs:
         ")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
+        # Expose conda env's bin to subsequent bash steps
+        echo "${CONDA_PREFIX}/bin" >> "$GITHUB_PATH"
+        if [ "$(uname)" = "Linux" ]; then
+          echo "LD_LIBRARY_PATH=${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        fi
+
+    # ── docker + compile ───────────────────────────────────────────────────
+    - name: Detect EPICS_HOST_ARCH
+      if: inputs.method != 'conda'
+      id: arch-native
+      shell: bash
+      run: |
+        case "$(uname -s)-$(uname -m)" in
+          Linux-x86_64)   ARCH=linux-x86_64 ;;
+          Linux-aarch64)  ARCH=linux-aarch64 ;;
+          Darwin-x86_64)  ARCH=darwin-x86_64 ;;
+          Darwin-arm64)   ARCH=darwin-aarch64 ;;
+          *)              ARCH="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)" ;;
+        esac
+        echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
+        echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
+
+    # ── docker ─────────────────────────────────────────────────────────────
+    - name: Pull image and create network
+      if: inputs.method == 'docker'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        NETWORK: ${{ inputs.network-name }}
+      run: |
+        docker pull "$IMAGE"
+        docker network create "$NETWORK" || true
+        echo "EPICS_DOCKER_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+        echo "EPICS_DOCKER_NETWORK=${NETWORK}" >> "$GITHUB_ENV"
+
+    - name: Install EPICS wrapper scripts
+      if: inputs.method == 'docker'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        NETWORK: ${{ inputs.network-name }}
+      run: |
+        WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
+        mkdir -p "$WRAPPERS"
+        for CMD in caget caput camonitor cainfo softIocPVA; do
+          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" "%s" %s "$@"\n' \
+            "$NETWORK" "$IMAGE" "$CMD" > "$WRAPPERS/$CMD"
+          chmod +x "$WRAPPERS/$CMD"
+        done
+        echo "$WRAPPERS" >> "$GITHUB_PATH"
+
+    # ── compile ────────────────────────────────────────────────────────────
+    - name: Install build dependencies
+      if: inputs.method == 'compile'
+      shell: bash
+      run: |
+        if [ "$(uname)" = "Linux" ]; then
+          sudo apt-get install -y --no-install-recommends libreadline-dev perl
+        fi
+
+    - name: Restore EPICS Base cache
+      if: inputs.method == 'compile'
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.install-prefix }}
+        key: epics-base-${{ inputs.epics-version || '7.0.8' }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Compile EPICS Base
+      if: inputs.method == 'compile'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.epics-version || '7.0.8' }}
+        PREFIX: ${{ inputs.install-prefix }}
+      run: |
+        if [ ! -f "$PREFIX/bin/$EPICS_HOST_ARCH/caget" ]; then
+          curl -fsSL "https://github.com/epics-base/epics-base/archive/refs/tags/R${VERSION}.tar.gz" \
+            | tar xz
+          cd "epics-base-R${VERSION}"
+          make -j"$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)" \
+            INSTALL_LOCATION="$PREFIX"
+        fi
+        echo "EPICS_BASE=${PREFIX}" >> "$GITHUB_ENV"
+        echo "${PREFIX}/bin/${EPICS_HOST_ARCH}" >> "$GITHUB_PATH"
+        if [ "$(uname)" = "Linux" ]; then
+          echo "LD_LIBRARY_PATH=${PREFIX}/lib/${EPICS_HOST_ARCH}:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        else
+          echo "DYLD_LIBRARY_PATH=${PREFIX}/lib/${EPICS_HOST_ARCH}:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        fi

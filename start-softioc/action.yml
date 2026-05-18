@@ -1,7 +1,13 @@
 name: Start softIoc
-description: Start a softIocPVA (or softIocPVX) instance in the background
+description: >-
+  Start a softIocPVA (or softIocPVX) instance and wait until it is ready.
+  Works with all three setup methods (conda, docker, compile).
 
 inputs:
+  method:
+    description: Must match the method used in setup-epics / setup-pvxs — 'conda', 'docker', or 'compile'
+    required: false
+    default: conda
   db-file:
     description: Path to the .db file to load
     required: true
@@ -10,7 +16,7 @@ inputs:
     required: false
     default: ''
   ioc-name:
-    description: IOC name / prefix passed to -n
+    description: IOC name passed to -n
     required: false
     default: 'softioc'
   use-pvxs:
@@ -18,19 +24,28 @@ inputs:
     required: false
     default: 'false'
   wait-pv:
-    description: CA/PVA PV name to poll until the IOC is ready (recommended)
+    description: PV name to poll until the IOC is ready (recommended)
     required: false
     default: ''
   wait-timeout:
-    description: Seconds to wait when wait-pv is not set
+    description: Seconds to sleep when wait-pv is not set
     required: false
     default: '10'
+  container-name:
+    description: Docker container name (docker method only)
+    required: false
+    default: 'softioc'
 
 runs:
   using: composite
   steps:
+
+    # ── conda + compile ────────────────────────────────────────────────────
+    # setup-epics exports ${CONDA_PREFIX}/bin to $GITHUB_PATH for conda, so
+    # plain bash works for both methods here.
     - name: Start softIoc
-      shell: micromamba-shell {0}
+      if: inputs.method != 'docker'
+      shell: bash
       env:
         DB_FILE: ${{ inputs.db-file }}
         MACROS: ${{ inputs.macros }}
@@ -49,7 +64,8 @@ runs:
         echo "Started $BINARY with PID $!"
 
     - name: Wait for IOC to be ready
-      shell: micromamba-shell {0}
+      if: inputs.method != 'docker'
+      shell: bash
       env:
         WAIT_PV: ${{ inputs.wait-pv }}
         WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
@@ -65,6 +81,62 @@ runs:
           done
           echo "::error::IOC did not become ready within 30s"
           cat "$RUNNER_TEMP/softioc.log"
+          exit 1
+        else
+          echo "No wait-pv specified, sleeping ${WAIT_TIMEOUT}s"
+          sleep "$WAIT_TIMEOUT"
+        fi
+
+    # ── docker ─────────────────────────────────────────────────────────────
+    - name: Start softIoc container
+      if: inputs.method == 'docker'
+      shell: bash
+      env:
+        DB_FILE: ${{ inputs.db-file }}
+        MACROS: ${{ inputs.macros }}
+        IOC_NAME: ${{ inputs.ioc-name }}
+        USE_PVXS: ${{ inputs.use-pvxs }}
+        CONTAINER_NAME: ${{ inputs.container-name }}
+      run: |
+        if [ "$USE_PVXS" = "true" ]; then
+          BINARY="softIocPVX"
+          IMAGE="${PVXS_DOCKER_IMAGE:-${EPICS_DOCKER_IMAGE}}"
+        else
+          BINARY="softIocPVA"
+          IMAGE="${EPICS_DOCKER_IMAGE}"
+        fi
+
+        ARGS=(-n "$IOC_NAME")
+        [ -n "$MACROS" ] && ARGS+=(-m "$MACROS")
+        ARGS+=(/db/ioc.db)
+
+        docker run -d \
+          --name "$CONTAINER_NAME" \
+          --network "$EPICS_DOCKER_NETWORK" \
+          -v "${PWD}/${DB_FILE}:/db/ioc.db:ro" \
+          "$IMAGE" "$BINARY" "${ARGS[@]}"
+
+        echo "SOFTIOC_CONTAINER=${CONTAINER_NAME}" >> "$GITHUB_ENV"
+        echo "Started $BINARY container '$CONTAINER_NAME'"
+
+    - name: Wait for IOC container to be ready
+      if: inputs.method == 'docker'
+      shell: bash
+      env:
+        WAIT_PV: ${{ inputs.wait-pv }}
+        WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+      run: |
+        if [ -n "$WAIT_PV" ]; then
+          echo "Polling PV: $WAIT_PV"
+          for i in $(seq 1 30); do
+            if caget -w 1 "$WAIT_PV" > /dev/null 2>&1; then
+              echo "IOC ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::IOC did not become ready within 30s"
+          docker logs "$SOFTIOC_CONTAINER" || true
           exit 1
         else
           echo "No wait-pv specified, sleeping ${WAIT_TIMEOUT}s"
