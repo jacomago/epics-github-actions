@@ -111,7 +111,7 @@ runs:
         NETWORK: ${{ inputs.network-name }}
       run: |
         docker pull "$IMAGE"
-        docker network create "$NETWORK" || true
+        docker network create "$NETWORK" 2>/dev/null || docker network inspect "$NETWORK" > /dev/null
         echo "EPICS_DOCKER_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
         echo "PVXS_DOCKER_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
         echo "EPICS_DOCKER_NETWORK=${NETWORK}" >> "$GITHUB_ENV"
