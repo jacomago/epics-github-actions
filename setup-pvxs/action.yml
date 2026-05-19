@@ -149,6 +149,8 @@ runs:
         if [ "$(uname)" = "Linux" ]; then
           sudo apt-get update -qq
           sudo apt-get install -y cmake
+        elif ! command -v cmake > /dev/null 2>&1; then
+          brew install cmake
         fi
 
     - name: Restore pvxs cache
