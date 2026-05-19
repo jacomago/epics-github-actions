@@ -67,18 +67,7 @@ runs:
       id: arch-conda
       shell: micromamba-shell {0}
       run: |
-        ARCH=$(python -c "
-        import platform
-        m = platform.machine()
-        s = platform.system()
-        mapping = {
-            ('Linux',  'x86_64'):  'linux-x86_64',
-            ('Linux',  'aarch64'): 'linux-aarch64',
-            ('Darwin', 'x86_64'):  'darwin-x86_64',
-            ('Darwin', 'arm64'):   'darwin-aarch64',
-        }
-        print(mapping.get((s, m), f'{s.lower()}-{m}'))
-        ")
+        ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect-arch.py")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
         # Expose conda env's bin to subsequent bash steps
@@ -88,35 +77,18 @@ runs:
         fi
 
     # ── docker ─────────────────────────────────────────────────────────────
-    - name: Detect EPICS_HOST_ARCH
+    # Reuse setup-epics to pull the image, create the network, detect arch,
+    # and generate the CA wrappers (caget, caput, …, softIocPVA).
+    - name: Setup EPICS Base (docker)
       if: inputs.method == 'docker'
       id: arch-native
-      shell: bash
-      run: |
-        case "$(uname -s)-$(uname -m)" in
-          Linux-x86_64)   ARCH=linux-x86_64 ;;
-          Linux-aarch64)  ARCH=linux-aarch64 ;;
-          Darwin-x86_64)  ARCH=darwin-x86_64 ;;
-          Darwin-arm64)   ARCH=darwin-aarch64 ;;
-          *)              ARCH="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)" ;;
-        esac
-        echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
-        echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
+      uses: ./setup-epics
+      with:
+        method: docker
+        image: ${{ inputs.image }}
+        network-name: ${{ inputs.network-name }}
 
-    - name: Pull image and create network
-      if: inputs.method == 'docker'
-      shell: bash
-      env:
-        IMAGE: ${{ inputs.image }}
-        NETWORK: ${{ inputs.network-name }}
-      run: |
-        docker pull "$IMAGE"
-        docker network create "$NETWORK" || true
-        echo "EPICS_DOCKER_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
-        echo "PVXS_DOCKER_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
-        echo "EPICS_DOCKER_NETWORK=${NETWORK}" >> "$GITHUB_ENV"
-
-    - name: Install PVXS wrapper scripts
+    - name: Add PVXS wrapper scripts
       if: inputs.method == 'docker'
       shell: bash
       env:
@@ -124,13 +96,12 @@ runs:
         NETWORK: ${{ inputs.network-name }}
       run: |
         WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
-        mkdir -p "$WRAPPERS"
-        for CMD in caget caput camonitor cainfo softIocPVA pvget pvput pvmonitor pvinfo softIocPVX; do
-          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" "%s" %s "$@"\n' \
+        for CMD in pvget pvput pvmonitor pvinfo softIocPVX; do
+          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" "%s" "%s" "$@"\n' \
             "$NETWORK" "$IMAGE" "$CMD" > "$WRAPPERS/$CMD"
           chmod +x "$WRAPPERS/$CMD"
         done
-        echo "$WRAPPERS" >> "$GITHUB_PATH"
+        echo "PVXS_DOCKER_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
 
     # ── compile ────────────────────────────────────────────────────────────
     - name: Setup EPICS Base
@@ -147,7 +118,10 @@ runs:
       shell: bash
       run: |
         if [ "$(uname)" = "Linux" ]; then
+          sudo apt-get update -qq
           sudo apt-get install -y cmake
+        elif ! command -v cmake > /dev/null 2>&1; then
+          brew install cmake
         fi
 
     - name: Restore pvxs cache
