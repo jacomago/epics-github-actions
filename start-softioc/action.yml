@@ -110,10 +110,12 @@ runs:
         [ -n "$MACROS" ] && ARGS+=(-m "$MACROS")
         ARGS+=(/db/ioc.db)
 
+        [[ "$DB_FILE" = /* ]] && ABS_DB="$DB_FILE" || ABS_DB="$PWD/$DB_FILE"
+
         docker run -d \
           --name "$CONTAINER_NAME" \
           --network "$EPICS_DOCKER_NETWORK" \
-          -v "${PWD}/${DB_FILE}:/db/ioc.db:ro" \
+          -v "${ABS_DB}:/db/ioc.db:ro" \
           "$IMAGE" "$BINARY" "${ARGS[@]}"
 
         echo "SOFTIOC_CONTAINER=${CONTAINER_NAME}" >> "$GITHUB_ENV"
