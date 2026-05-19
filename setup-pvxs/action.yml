@@ -126,7 +126,7 @@ runs:
         WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
         mkdir -p "$WRAPPERS"
         for CMD in caget caput camonitor cainfo softIocPVA pvget pvput pvmonitor pvinfo softIocPVX; do
-          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" "%s" %s "$@"\n' \
+          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" "%s" "%s" "$@"\n' \
             "$NETWORK" "$IMAGE" "$CMD" > "$WRAPPERS/$CMD"
           chmod +x "$WRAPPERS/$CMD"
         done
