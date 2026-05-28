@@ -12,8 +12,8 @@ inputs:
   # ── conda ──────────────────────────────────────────────────────────────
   pvxs-version:
     description: >-
-      pvxs version. conda: package version (e.g. "1.3.1").
-      compile: git tag (e.g. "1.3.1"). Ignored for docker.
+      pvxs version. conda: package version (e.g. "1.5.1").
+      compile: git tag (e.g. "1.5.1"). Ignored for docker.
     required: false
     default: ''
   epics-version:
@@ -70,8 +70,10 @@ runs:
         ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect-arch.py")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
-        # Expose conda env's bin to subsequent bash steps
+        # Expose conda env's bin to subsequent bash steps.
+        # EPICS binaries live in the arch-specific subdirectory on conda-forge.
         echo "${CONDA_PREFIX}/bin" >> "$GITHUB_PATH"
+        echo "${CONDA_PREFIX}/bin/${ARCH}" >> "$GITHUB_PATH"
         if [ "$(uname)" = "Linux" ]; then
           echo "LD_LIBRARY_PATH=${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         fi
@@ -129,17 +131,17 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ inputs.install-prefix }}
-        key: pvxs-${{ inputs.pvxs-version || '1.3.1' }}-epics-${{ inputs.epics-version || '7.0.8' }}-${{ runner.os }}-${{ runner.arch }}
+        key: pvxs-${{ inputs.pvxs-version || '1.5.1' }}-epics-${{ inputs.epics-version || '7.0.9' }}-${{ runner.os }}-${{ runner.arch }}
 
     - name: Compile pvxs
       if: inputs.method == 'compile'
       shell: bash
       env:
-        VERSION: ${{ inputs.pvxs-version || '1.3.1' }}
+        VERSION: ${{ inputs.pvxs-version || '1.5.1' }}
         PREFIX: ${{ inputs.install-prefix }}
       run: |
         if [ ! -f "$PREFIX/bin/$EPICS_HOST_ARCH/pvget" ]; then
-          git clone --branch "$VERSION" --depth 1 \
+          git clone --branch "$VERSION" \
             https://github.com/mdavidsaver/pvxs.git
           cmake -S pvxs -B pvxs/build \
             -DCMAKE_INSTALL_PREFIX="$PREFIX" \

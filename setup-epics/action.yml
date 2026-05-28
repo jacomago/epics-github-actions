@@ -12,8 +12,10 @@ inputs:
   # ── conda ──────────────────────────────────────────────────────────────
   epics-version:
     description: >-
-      epics-base version. conda: package version (e.g. "7.0.8").
-      compile: release tag without the leading R (e.g. "7.0.8").
+      epics-base version. conda: package version (e.g. "7.0.9").
+      compile: release tag without the leading R (e.g. "7.0.9"); minimum
+      supported version for compile is 7.0.9 (older releases fail to build
+      on modern Clang/GCC).
       Ignored for docker (version is encoded in the image tag).
     required: false
     default: ''
@@ -66,8 +68,10 @@ runs:
         ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect-arch.py")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
-        # Expose conda env's bin to subsequent bash steps
+        # Expose conda env's bin to subsequent bash steps.
+        # EPICS binaries live in the arch-specific subdirectory on conda-forge.
         echo "${CONDA_PREFIX}/bin" >> "$GITHUB_PATH"
+        echo "${CONDA_PREFIX}/bin/${ARCH}" >> "$GITHUB_PATH"
         if [ "$(uname)" = "Linux" ]; then
           echo "LD_LIBRARY_PATH=${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         fi
@@ -132,13 +136,13 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ inputs.install-prefix }}
-        key: epics-base-${{ inputs.epics-version || '7.0.8' }}-${{ runner.os }}-${{ runner.arch }}
+        key: epics-base-${{ inputs.epics-version || '7.0.9' }}-${{ runner.os }}-${{ runner.arch }}
 
     - name: Compile EPICS Base
       if: inputs.method == 'compile'
       shell: bash
       env:
-        VERSION: ${{ inputs.epics-version || '7.0.8' }}
+        VERSION: ${{ inputs.epics-version || '7.0.9' }}
         PREFIX: ${{ inputs.install-prefix }}
       run: |
         if [ ! -f "$PREFIX/bin/$EPICS_HOST_ARCH/caget" ]; then
