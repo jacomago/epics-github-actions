@@ -36,7 +36,7 @@ jobs:
         with:
           method: ${{ matrix.method }}
           db-file: test/test.db
-          macros: P=CI:
+          macros: "P=CI:"
           wait-pv: CI:STR
 
       - name: Read test PVs
@@ -73,7 +73,7 @@ jobs:
         with:
           method: ${{ matrix.method }}
           db-file: test/test.db
-          macros: P=PVXS:
+          macros: "P=PVXS:"
           use-pvxs: 'true'
           wait-pv: PVXS:STR
 
