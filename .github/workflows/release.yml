@@ -1,12 +1,15 @@
-name: CI
+name: Release
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: read
 
 jobs:
-  # ── setup-epics matrix ──────────────────────────────────────────────────
+  # ── setup-epics full matrix ──────────────────────────────────────────────
   test-epics:
     name: setup-epics (${{ matrix.method }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -21,6 +24,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        if: matrix.method == 'docker'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup EPICS Base
         uses: ./setup-epics
@@ -43,7 +54,7 @@ jobs:
         shell: bash
         run: caget CI:AI CI:BI CI:STR CI:WF
 
-  # ── setup-pvxs matrix ───────────────────────────────────────────────────
+  # ── setup-pvxs full matrix ───────────────────────────────────────────────
   test-pvxs:
     name: setup-pvxs (${{ matrix.method }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -58,6 +69,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        if: matrix.method == 'docker'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup PVXS
         uses: ./setup-pvxs
@@ -80,3 +99,19 @@ jobs:
       - name: Read test PVs via PVA
         shell: bash
         run: pvget PVXS:AI PVXS:BI PVXS:STR PVXS:WF
+
+  # ── create GitHub release ────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [test-epics, test-pvxs]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
