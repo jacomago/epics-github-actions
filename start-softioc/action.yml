@@ -47,7 +47,7 @@ runs:
         MACROS: ${{ inputs.macros }}
         USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
-        BINARY="softIocPVA"
+        BINARY="softIoc"
         [ "$USE_PVXS" = "true" ] && BINARY="softIocPVX"
 
         # -S runs a non-interactive IOC that spins forever (stays up in the
@@ -102,7 +102,7 @@ runs:
           BINARY="softIocPVX"
           IMAGE="${PVXS_DOCKER_IMAGE:-${EPICS_DOCKER_IMAGE}}"
         else
-          BINARY="softIocPVA"
+          BINARY="softIoc"
           IMAGE="${EPICS_DOCKER_IMAGE}"
         fi
 
@@ -120,6 +120,15 @@ runs:
 
         echo "SOFTIOC_CONTAINER=${CONTAINER_NAME}" >> "$GITHUB_ENV"
         echo "Started $BINARY container '$CONTAINER_NAME'"
+
+        # Docker bridge networks don't deliver CA/PVA broadcast, so point
+        # clients at the IOC container by name (resolved via Docker DNS).
+        {
+          echo "EPICS_CA_AUTO_ADDR_LIST=NO"
+          echo "EPICS_CA_ADDR_LIST=${CONTAINER_NAME}"
+          echo "EPICS_PVA_AUTO_ADDR_LIST=NO"
+          echo "EPICS_PVA_ADDR_LIST=${CONTAINER_NAME}"
+        } >> "$GITHUB_ENV"
 
     - name: Wait for IOC container to be ready
       if: inputs.method == 'docker'

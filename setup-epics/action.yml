@@ -28,7 +28,7 @@ inputs:
   image:
     description: Docker image containing epics-base (docker method only)
     required: false
-    default: 'ghcr.io/epics-containers/epics-base-runtime:7.0.10ec1'
+    default: 'ghcr.io/epics-containers/epics-base-developer:7.0.10ec1'
   network-name:
     description: Docker bridge network for CA/PVA communication (docker method only)
     required: false
@@ -59,6 +59,8 @@ runs:
           ${{ inputs.epics-version != '' && format('epics-base={0}', inputs.epics-version) || 'epics-base' }}
         init-shell: bash
         cache-environment: true
+        # Skip the post-job shell deinit, which crashes on macOS runners.
+        post-cleanup: none
 
     - name: Export arch and add conda env to PATH
       if: inputs.method == 'conda'
@@ -118,9 +120,13 @@ runs:
       run: |
         WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
         mkdir -p "$WRAPPERS"
-        for CMD in caget caput camonitor cainfo softIocPVA; do
-          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" "%s" "%s" "$@"\n' \
-            "$NETWORK" "$IMAGE" "$CMD" > "$WRAPPERS/$CMD"
+        # Forward EPICS addressing into the client container: Docker bridge
+        # networks don't deliver CA/PVA broadcast, so start-softioc sets these
+        # to the IOC container name for unicast discovery.
+        ENVFWD='-e EPICS_CA_AUTO_ADDR_LIST -e EPICS_CA_ADDR_LIST -e EPICS_PVA_AUTO_ADDR_LIST -e EPICS_PVA_ADDR_LIST'
+        for CMD in caget caput camonitor cainfo softIoc; do
+          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" %s "%s" "%s" "$@"\n' \
+            "$NETWORK" "$ENVFWD" "$IMAGE" "$CMD" > "$WRAPPERS/$CMD"
           chmod +x "$WRAPPERS/$CMD"
         done
         echo "$WRAPPERS" >> "$GITHUB_PATH"

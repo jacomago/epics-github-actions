@@ -39,7 +39,7 @@ jobs:
 
       - name: Verify CA tools are on PATH
         shell: bash
-        run: which caget && which caput && which softIocPVA
+        run: which caget && which caput && which softIoc
 
       - name: Start softIoc and read PVs
         uses: ./start-softioc

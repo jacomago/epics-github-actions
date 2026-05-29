@@ -10,7 +10,7 @@ All three actions accept a `method` input that selects how EPICS is provided:
 | `docker` | Pulls a pre-built image from [epics-containers](https://github.com/epics-containers), installs thin wrapper scripts on `$PATH` | Docker (ubuntu runners only); GHCR login step (see [docker example](#docker)) |
 | `compile` | Downloads source from GitHub and builds with `make` / `cmake`, result is cached | C++ compiler, ~5–10 min first run; **EPICS Base ≥ 7.0.9** (older releases fail to compile on modern Clang/GCC) |
 
-After any of these setup actions, `caget`, `caput`, `softIocPVA`, etc. are available as plain shell commands in subsequent `bash` steps.
+After any of these setup actions, `caget`, `caput`, `softIoc`, etc. are available as plain shell commands in subsequent `bash` steps.
 
 ---
 
@@ -30,7 +30,7 @@ Installs `epics-base`.
     environment-name: epics
 
     # docker options
-    image: 'ghcr.io/epics-containers/epics-base-runtime:7.0.10ec1'
+    image: 'ghcr.io/epics-containers/epics-base-developer:7.0.10ec1'
     network-name: epics-net
 
     # compile options
@@ -63,7 +63,7 @@ Installs `epics-base` **and** `pvxs`. Adds `pvxget`, `pvxput`, `pvxmonitor`, `pv
     environment-name: epics
 
     # docker options
-    image: 'ghcr.io/epics-containers/epics-base-runtime:7.0.10ec1'
+    image: 'ghcr.io/epics-containers/epics-base-developer:7.0.10ec1'
     network-name: epics-net
 
     # compile options
@@ -76,7 +76,7 @@ Installs `epics-base` **and** `pvxs`. Adds `pvxget`, `pvxput`, `pvxmonitor`, `pv
 
 ### `start-softioc`
 
-Starts a `softIocPVA` (or `softIocPVX`) instance and waits until it is ready. Pass the same `method` as used in `setup-epics` / `setup-pvxs`.
+Starts a `softIoc` (or `softIocPVX`) instance and waits until it is ready. Pass the same `method` as used in `setup-epics` / `setup-pvxs`.
 
 ```yaml
 - uses: jacomago/epics-github-actions/start-softioc@v1

@@ -35,13 +35,13 @@ Steps to update:
 
 ### Docker images
 
-Both actions use the same image, which bundles epics-base (CA tools + `softIocPVA`)
+Both actions use the same image, which bundles epics-base (CA tools + `softIoc`)
 and pvxs (`pvxget`, …, `softIocPVX`):
-- `ghcr.io/epics-containers/epics-base-runtime:<tag>` — see [epics-containers packages](https://github.com/orgs/epics-containers/packages)
+- `ghcr.io/epics-containers/epics-base-developer:<tag>` — see [epics-containers packages](https://github.com/orgs/epics-containers/packages)
 
 Before updating a tag, verify it exists on `ghcr.io/epics-containers`:
 ```bash
-docker pull ghcr.io/epics-containers/epics-base-runtime:<new-tag>
+docker pull ghcr.io/epics-containers/epics-base-developer:<new-tag>
 ```
 
 Steps to update:
