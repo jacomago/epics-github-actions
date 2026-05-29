@@ -12,8 +12,10 @@ inputs:
   # ── conda ──────────────────────────────────────────────────────────────
   epics-version:
     description: >-
-      epics-base version. conda: package version (e.g. "7.0.8").
-      compile: release tag without the leading R (e.g. "7.0.8").
+      epics-base version. conda: package version (e.g. "7.0.9").
+      compile: release tag without the leading R (e.g. "7.0.9"); minimum
+      supported version for compile is 7.0.9 (older releases fail to build
+      on modern Clang/GCC).
       Ignored for docker (version is encoded in the image tag).
     required: false
     default: ''
@@ -26,7 +28,7 @@ inputs:
   image:
     description: Docker image containing epics-base (docker method only)
     required: false
-    default: 'ghcr.io/epics-containers/epics-base:7.0.8r1.0'
+    default: 'ghcr.io/epics-containers/epics-base-developer:7.0.10ec1'
   network-name:
     description: Docker bridge network for CA/PVA communication (docker method only)
     required: false
@@ -57,6 +59,8 @@ runs:
           ${{ inputs.epics-version != '' && format('epics-base={0}', inputs.epics-version) || 'epics-base' }}
         init-shell: bash
         cache-environment: true
+        # Skip the post-job shell deinit, which crashes on macOS runners.
+        post-cleanup: none
 
     - name: Export arch and add conda env to PATH
       if: inputs.method == 'conda'
@@ -66,10 +70,16 @@ runs:
         ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect-arch.py")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
-        # Expose conda env's bin to subsequent bash steps
+        # conda-forge installs epics-base under $CONDA_PREFIX/epics, with the CA
+        # tools (caget, softIocPVA, …) in the EPICS arch subdirectory. $CONDA_PREFIX/bin
+        # holds general conda tools. Expose both to subsequent plain-bash steps.
         echo "${CONDA_PREFIX}/bin" >> "$GITHUB_PATH"
+        echo "${CONDA_PREFIX}/epics/bin/${ARCH}" >> "$GITHUB_PATH"
+        echo "EPICS_BASE=${CONDA_PREFIX}/epics" >> "$GITHUB_ENV"
         if [ "$(uname)" = "Linux" ]; then
-          echo "LD_LIBRARY_PATH=${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=${CONDA_PREFIX}/epics/lib/${ARCH}:${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        else
+          echo "DYLD_LIBRARY_PATH=${CONDA_PREFIX}/epics/lib/${ARCH}:${CONDA_PREFIX}/lib:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         fi
 
     # ── docker + compile ───────────────────────────────────────────────────
@@ -110,9 +120,13 @@ runs:
       run: |
         WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
         mkdir -p "$WRAPPERS"
-        for CMD in caget caput camonitor cainfo softIocPVA; do
-          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" "%s" "%s" "$@"\n' \
-            "$NETWORK" "$IMAGE" "$CMD" > "$WRAPPERS/$CMD"
+        # Forward EPICS addressing into the client container: Docker bridge
+        # networks don't deliver CA/PVA broadcast, so start-softioc sets these
+        # to the IOC container name for unicast discovery.
+        ENVFWD='-e EPICS_CA_AUTO_ADDR_LIST -e EPICS_CA_ADDR_LIST -e EPICS_PVA_AUTO_ADDR_LIST -e EPICS_PVA_ADDR_LIST'
+        for CMD in caget caput camonitor cainfo softIoc; do
+          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" %s "%s" "%s" "$@"\n' \
+            "$NETWORK" "$ENVFWD" "$IMAGE" "$CMD" > "$WRAPPERS/$CMD"
           chmod +x "$WRAPPERS/$CMD"
         done
         echo "$WRAPPERS" >> "$GITHUB_PATH"
@@ -132,26 +146,32 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ inputs.install-prefix }}
-        key: epics-base-${{ inputs.epics-version || '7.0.8' }}-${{ runner.os }}-${{ runner.arch }}
+        key: epics-base-anl-${{ inputs.epics-version || '7.0.9' }}-${{ runner.os }}-${{ runner.arch }}
 
     - name: Compile EPICS Base
       if: inputs.method == 'compile'
       shell: bash
       env:
-        VERSION: ${{ inputs.epics-version || '7.0.8' }}
+        VERSION: ${{ inputs.epics-version || '7.0.9' }}
         PREFIX: ${{ inputs.install-prefix }}
       run: |
-        if [ ! -f "$PREFIX/bin/$EPICS_HOST_ARCH/caget" ]; then
-          curl -fsSL "https://github.com/epics-base/epics-base/archive/refs/tags/R${VERSION}.tar.gz" \
-            | tar xz
-          cd "epics-base-R${VERSION}"
-          make -j"$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)" \
-            INSTALL_LOCATION="$PREFIX"
+        SRC="${PREFIX}/epics-base"
+        # The epics.anl.gov release tarball bundles the PVA submodules
+        # (pvData/pvAccess/pva2pva) so softIocPVA is built; the GitHub archive
+        # tarball omits them. Build in place — EPICS_BASE points at the tree so
+        # pvxs can later build against it.
+        if [ ! -x "$SRC/bin/$EPICS_HOST_ARCH/softIocPVA" ]; then
+          mkdir -p "$PREFIX"
+          curl -fsSL "https://epics.anl.gov/download/base/base-${VERSION}.tar.gz" \
+            | tar xz -C "$PREFIX"
+          rm -rf "$SRC"
+          mv "${PREFIX}/base-${VERSION}" "$SRC"
+          make -C "$SRC" -j"$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)"
         fi
-        echo "EPICS_BASE=${PREFIX}" >> "$GITHUB_ENV"
-        echo "${PREFIX}/bin/${EPICS_HOST_ARCH}" >> "$GITHUB_PATH"
+        echo "EPICS_BASE=${SRC}" >> "$GITHUB_ENV"
+        echo "${SRC}/bin/${EPICS_HOST_ARCH}" >> "$GITHUB_PATH"
         if [ "$(uname)" = "Linux" ]; then
-          echo "LD_LIBRARY_PATH=${PREFIX}/lib/${EPICS_HOST_ARCH}:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=${SRC}/lib/${EPICS_HOST_ARCH}:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         else
-          echo "DYLD_LIBRARY_PATH=${PREFIX}/lib/${EPICS_HOST_ARCH}:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=${SRC}/lib/${EPICS_HOST_ARCH}:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         fi

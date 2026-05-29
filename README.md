@@ -7,10 +7,10 @@ All three actions accept a `method` input that selects how EPICS is provided:
 | `method` | How it works | Requires |
 |---|---|---|
 | `conda` *(default)* | Installs packages from [conda-forge](https://conda-forge.org/) via [micromamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html) | nothing extra |
-| `docker` | Pulls a pre-built image from [epics-containers](https://github.com/epics-containers), installs thin wrapper scripts on `$PATH` | Docker (ubuntu runners only) |
-| `compile` | Downloads source from GitHub and builds with `make` / `cmake`, result is cached | C++ compiler, ~5–10 min first run |
+| `docker` | Pulls a pre-built image from [epics-containers](https://github.com/epics-containers), installs thin wrapper scripts on `$PATH` | Docker (ubuntu runners only); GHCR login step (see [docker example](#docker)) |
+| `compile` | Downloads source from GitHub and builds with `make` / `cmake`, result is cached | C++ compiler, ~5–10 min first run; **EPICS Base ≥ 7.0.9** (older releases fail to compile on modern Clang/GCC) |
 
-After any of these setup actions, `caget`, `caput`, `softIocPVA`, etc. are available as plain shell commands in subsequent `bash` steps.
+After any of these setup actions, `caget`, `caput`, `softIoc`, etc. are available as plain shell commands in subsequent `bash` steps.
 
 ---
 
@@ -26,11 +26,11 @@ Installs `epics-base`.
     method: conda          # 'conda' | 'docker' | 'compile'
 
     # conda options
-    epics-version: ''      # pin version, e.g. "7.0.8" (default: latest)
+    epics-version: ''      # pin version, e.g. "7.0.9" (default: latest)
     environment-name: epics
 
     # docker options
-    image: 'ghcr.io/epics-containers/epics-base:7.0.8r1.0'
+    image: 'ghcr.io/epics-containers/epics-base-developer:7.0.10ec1'
     network-name: epics-net
 
     # compile options
@@ -50,7 +50,7 @@ Additional variables per method:
 
 ### `setup-pvxs`
 
-Installs `epics-base` **and** `pvxs`. Adds `pvget`, `pvput`, `pvmonitor`, `pvinfo`, `softIocPVX`.
+Installs `epics-base` **and** `pvxs`. Adds `pvxget`, `pvxput`, `pvxmonitor`, `pvxinfo`, `softIocPVX`.
 
 ```yaml
 - uses: jacomago/epics-github-actions/setup-pvxs@v1
@@ -58,12 +58,12 @@ Installs `epics-base` **and** `pvxs`. Adds `pvget`, `pvput`, `pvmonitor`, `pvinf
     method: conda
 
     # conda options
-    pvxs-version: ''       # e.g. "1.3.1" (default: latest)
+    pvxs-version: ''       # e.g. "1.5.1" (default: latest)
     epics-version: ''
     environment-name: epics
 
     # docker options
-    image: 'ghcr.io/epics-containers/pvxs:1.3.1r1.0'
+    image: 'ghcr.io/epics-containers/epics-base-developer:7.0.10ec1'
     network-name: epics-net
 
     # compile options
@@ -76,7 +76,7 @@ Installs `epics-base` **and** `pvxs`. Adds `pvget`, `pvput`, `pvmonitor`, `pvinf
 
 ### `start-softioc`
 
-Starts a `softIocPVA` (or `softIocPVX`) instance and waits until it is ready. Pass the same `method` as used in `setup-epics` / `setup-pvxs`.
+Starts a `softIoc` (or `softIocPVX`) instance and waits until it is ready. Pass the same `method` as used in `setup-epics` / `setup-pvxs`.
 
 ```yaml
 - uses: jacomago/epics-github-actions/start-softioc@v1
@@ -84,7 +84,6 @@ Starts a `softIocPVA` (or `softIocPVX`) instance and waits until it is ready. Pa
     method: conda            # must match setup-epics / setup-pvxs
     db-file: path/to/records.db
     macros: 'P=TEST:,R=REC:'
-    ioc-name: softioc
     use-pvxs: 'false'        # 'true' → softIocPVX (requires setup-pvxs)
     wait-pv: 'TEST:STATUS'   # poll this PV until the IOC is up (recommended)
     wait-timeout: '10'       # fallback sleep if wait-pv is not set
@@ -118,12 +117,21 @@ jobs:
 
 ### docker
 
+GHCR requires an authenticated pull even for public images. Add `docker/login-action` before the setup step.
+
 ```yaml
 jobs:
   test:
     runs-on: ubuntu-latest   # Docker required
+    permissions:
+      packages: read
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: jacomago/epics-github-actions/setup-epics@v1
         with:
           method: docker
@@ -149,7 +157,7 @@ jobs:
       - uses: jacomago/epics-github-actions/setup-epics@v1
         with:
           method: compile
-          epics-version: '7.0.8'
+          epics-version: '7.0.9'
       - uses: jacomago/epics-github-actions/start-softioc@v1
         with:
           method: compile

@@ -1,0 +1,62 @@
+name: Smoke test
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── setup-epics smoke test ───────────────────────────────────────────────
+  smoke-epics:
+    name: setup-epics (conda, ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup EPICS Base
+        uses: ./setup-epics
+
+      - name: Verify CA tools are on PATH
+        shell: bash
+        run: which caget && which caput && which softIoc
+
+      - name: Start softIoc and read PVs
+        uses: ./start-softioc
+        with:
+          db-file: test/test.db
+          macros: "P=CI:"
+          wait-pv: CI:STR
+
+      - name: Read test PVs
+        shell: bash
+        run: caget CI:AI CI:BI CI:STR CI:WF
+
+  # ── setup-pvxs smoke test ────────────────────────────────────────────────
+  smoke-pvxs:
+    name: setup-pvxs (conda, ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PVXS
+        uses: ./setup-pvxs
+
+      - name: Verify pvxs tools are on PATH
+        shell: bash
+        run: which pvxget && which pvxput && which softIocPVX
+
+      - name: Start softIocPVX and read PVs
+        uses: ./start-softioc
+        with:
+          db-file: test/test.db
+          macros: "P=PVXS:"
+          use-pvxs: 'true'
+          wait-pv: PVXS:STR
+
+      - name: Read test PVs via PVA
+        shell: bash
+        run: pvxget PVXS:AI PVXS:BI PVXS:STR PVXS:WF

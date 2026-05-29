@@ -1,9 +1,11 @@
-name: CI
+name: Test
 
 on:
-  push:
-    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+  packages: read
 
 jobs:
   # ── setup-epics matrix ──────────────────────────────────────────────────
@@ -22,6 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Log in to GitHub Container Registry
+        if: matrix.method == 'docker'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup EPICS Base
         uses: ./setup-epics
         with:
@@ -29,14 +39,14 @@ jobs:
 
       - name: Verify CA tools are on PATH
         shell: bash
-        run: which caget && which caput && which softIocPVA
+        run: which caget && which caput && which softIoc
 
       - name: Start softIoc and read PVs
         uses: ./start-softioc
         with:
           method: ${{ matrix.method }}
           db-file: test/test.db
-          macros: P=CI:
+          macros: "P=CI:"
           wait-pv: CI:STR
 
       - name: Read test PVs
@@ -59,6 +69,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Log in to GitHub Container Registry
+        if: matrix.method == 'docker'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup PVXS
         uses: ./setup-pvxs
         with:
@@ -66,17 +84,17 @@ jobs:
 
       - name: Verify pvxs tools are on PATH
         shell: bash
-        run: which pvget && which pvput && which softIocPVX
+        run: which pvxget && which pvxput && which softIocPVX
 
       - name: Start softIocPVX and read PVs
         uses: ./start-softioc
         with:
           method: ${{ matrix.method }}
           db-file: test/test.db
-          macros: P=PVXS:
+          macros: "P=PVXS:"
           use-pvxs: 'true'
           wait-pv: PVXS:STR
 
       - name: Read test PVs via PVA
         shell: bash
-        run: pvget PVXS:AI PVXS:BI PVXS:STR PVXS:WF
+        run: pvxget PVXS:AI PVXS:BI PVXS:STR PVXS:WF

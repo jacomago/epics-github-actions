@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  # ── setup-epics full matrix ──────────────────────────────────────────────
+  test-epics:
+    name: setup-epics (${{ matrix.method }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        method: [conda, compile]
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - method: docker
+            os: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        if: matrix.method == 'docker'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup EPICS Base
+        uses: ./setup-epics
+        with:
+          method: ${{ matrix.method }}
+
+      - name: Verify CA tools are on PATH
+        shell: bash
+        run: which caget && which caput && which softIoc
+
+      - name: Start softIoc and read PVs
+        uses: ./start-softioc
+        with:
+          method: ${{ matrix.method }}
+          db-file: test/test.db
+          macros: "P=CI:"
+          wait-pv: CI:STR
+
+      - name: Read test PVs
+        shell: bash
+        run: caget CI:AI CI:BI CI:STR CI:WF
+
+  # ── setup-pvxs full matrix ───────────────────────────────────────────────
+  test-pvxs:
+    name: setup-pvxs (${{ matrix.method }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        method: [conda, compile]
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - method: docker
+            os: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        if: matrix.method == 'docker'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup PVXS
+        uses: ./setup-pvxs
+        with:
+          method: ${{ matrix.method }}
+
+      - name: Verify pvxs tools are on PATH
+        shell: bash
+        run: which pvxget && which pvxput && which softIocPVX
+
+      - name: Start softIocPVX and read PVs
+        uses: ./start-softioc
+        with:
+          method: ${{ matrix.method }}
+          db-file: test/test.db
+          macros: "P=PVXS:"
+          use-pvxs: 'true'
+          wait-pv: PVXS:STR
+
+      - name: Read test PVs via PVA
+        shell: bash
+        run: pvxget PVXS:AI PVXS:BI PVXS:STR PVXS:WF
+
+  # ── create GitHub release ────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [test-epics, test-pvxs]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

@@ -15,10 +15,6 @@ inputs:
     description: Macro string passed to -m (e.g. "P=TEST:,R=REC:")
     required: false
     default: ''
-  ioc-name:
-    description: IOC name passed to -n
-    required: false
-    default: 'softioc'
   use-pvxs:
     description: Use softIocPVX (pvxs) instead of softIocPVA
     required: false
@@ -49,15 +45,16 @@ runs:
       env:
         DB_FILE: ${{ inputs.db-file }}
         MACROS: ${{ inputs.macros }}
-        IOC_NAME: ${{ inputs.ioc-name }}
         USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
-        BINARY="softIocPVA"
+        BINARY="softIoc"
         [ "$USE_PVXS" = "true" ] && BINARY="softIocPVX"
 
-        ARGS=(-n "$IOC_NAME")
+        # -S runs a non-interactive IOC that spins forever (stays up in the
+        # background). -m macros apply to the -d database. softIoc has no -n.
+        ARGS=(-S)
         [ -n "$MACROS" ] && ARGS+=(-m "$MACROS")
-        ARGS+=("$DB_FILE")
+        ARGS+=(-d "$DB_FILE")
 
         "$BINARY" "${ARGS[@]}" > "$RUNNER_TEMP/softioc.log" 2>&1 &
         echo "SOFTIOC_PID=$!" >> "$GITHUB_ENV"
@@ -69,11 +66,15 @@ runs:
       env:
         WAIT_PV: ${{ inputs.wait-pv }}
         WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+        USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
+        # softIocPVX serves PVA only, so poll with pvxget; softIocPVA serves CA.
+        POLL="caget"
+        [ "$USE_PVXS" = "true" ] && POLL="pvxget"
         if [ -n "$WAIT_PV" ]; then
           echo "Polling PV: $WAIT_PV"
           for i in $(seq 1 30); do
-            if caget -w 1 "$WAIT_PV" > /dev/null 2>&1; then
+            if "$POLL" -w 1 "$WAIT_PV" > /dev/null 2>&1; then
               echo "IOC ready after ${i}s"
               exit 0
             fi
@@ -94,7 +95,6 @@ runs:
       env:
         DB_FILE: ${{ inputs.db-file }}
         MACROS: ${{ inputs.macros }}
-        IOC_NAME: ${{ inputs.ioc-name }}
         USE_PVXS: ${{ inputs.use-pvxs }}
         CONTAINER_NAME: ${{ inputs.container-name }}
       run: |
@@ -102,13 +102,13 @@ runs:
           BINARY="softIocPVX"
           IMAGE="${PVXS_DOCKER_IMAGE:-${EPICS_DOCKER_IMAGE}}"
         else
-          BINARY="softIocPVA"
+          BINARY="softIoc"
           IMAGE="${EPICS_DOCKER_IMAGE}"
         fi
 
-        ARGS=(-n "$IOC_NAME")
+        ARGS=(-S)
         [ -n "$MACROS" ] && ARGS+=(-m "$MACROS")
-        ARGS+=(/db/ioc.db)
+        ARGS+=(-d /db/ioc.db)
 
         [[ "$DB_FILE" = /* ]] && ABS_DB="$DB_FILE" || ABS_DB="$PWD/$DB_FILE"
 
@@ -121,17 +121,30 @@ runs:
         echo "SOFTIOC_CONTAINER=${CONTAINER_NAME}" >> "$GITHUB_ENV"
         echo "Started $BINARY container '$CONTAINER_NAME'"
 
+        # Docker bridge networks don't deliver CA/PVA broadcast, so point
+        # clients at the IOC container by name (resolved via Docker DNS).
+        {
+          echo "EPICS_CA_AUTO_ADDR_LIST=NO"
+          echo "EPICS_CA_ADDR_LIST=${CONTAINER_NAME}"
+          echo "EPICS_PVA_AUTO_ADDR_LIST=NO"
+          echo "EPICS_PVA_ADDR_LIST=${CONTAINER_NAME}"
+        } >> "$GITHUB_ENV"
+
     - name: Wait for IOC container to be ready
       if: inputs.method == 'docker'
       shell: bash
       env:
         WAIT_PV: ${{ inputs.wait-pv }}
         WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+        USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
+        # softIocPVX serves PVA only, so poll with pvxget; softIocPVA serves CA.
+        POLL="caget"
+        [ "$USE_PVXS" = "true" ] && POLL="pvxget"
         if [ -n "$WAIT_PV" ]; then
           echo "Polling PV: $WAIT_PV"
           for i in $(seq 1 30); do
-            if caget -w 1 "$WAIT_PV" > /dev/null 2>&1; then
+            if "$POLL" -w 1 "$WAIT_PV" > /dev/null 2>&1; then
               echo "IOC ready after ${i}s"
               exit 0
             fi
