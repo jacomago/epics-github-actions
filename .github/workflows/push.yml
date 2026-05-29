@@ -47,7 +47,7 @@ jobs:
 
       - name: Verify pvxs tools are on PATH
         shell: bash
-        run: which pvget && which pvput && which softIocPVX
+        run: which pvxget && which pvxput && which softIocPVX
 
       - name: Start softIocPVX and read PVs
         uses: ./start-softioc
@@ -59,4 +59,4 @@ jobs:
 
       - name: Read test PVs via PVA
         shell: bash
-        run: pvget PVXS:AI PVXS:BI PVXS:STR PVXS:WF
+        run: pvxget PVXS:AI PVXS:BI PVXS:STR PVXS:WF

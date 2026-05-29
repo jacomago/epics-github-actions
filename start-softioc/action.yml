@@ -69,11 +69,15 @@ runs:
       env:
         WAIT_PV: ${{ inputs.wait-pv }}
         WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+        USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
+        # softIocPVX serves PVA only, so poll with pvxget; softIocPVA serves CA.
+        POLL="caget"
+        [ "$USE_PVXS" = "true" ] && POLL="pvxget"
         if [ -n "$WAIT_PV" ]; then
           echo "Polling PV: $WAIT_PV"
           for i in $(seq 1 30); do
-            if caget -w 1 "$WAIT_PV" > /dev/null 2>&1; then
+            if "$POLL" -w 1 "$WAIT_PV" > /dev/null 2>&1; then
               echo "IOC ready after ${i}s"
               exit 0
             fi
@@ -127,11 +131,15 @@ runs:
       env:
         WAIT_PV: ${{ inputs.wait-pv }}
         WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+        USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
+        # softIocPVX serves PVA only, so poll with pvxget; softIocPVA serves CA.
+        POLL="caget"
+        [ "$USE_PVXS" = "true" ] && POLL="pvxget"
         if [ -n "$WAIT_PV" ]; then
           echo "Polling PV: $WAIT_PV"
           for i in $(seq 1 30); do
-            if caget -w 1 "$WAIT_PV" > /dev/null 2>&1; then
+            if "$POLL" -w 1 "$WAIT_PV" > /dev/null 2>&1; then
               echo "IOC ready after ${i}s"
               exit 0
             fi

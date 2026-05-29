@@ -29,7 +29,7 @@ inputs:
   image:
     description: Docker image containing pvxs and epics-base (docker method only)
     required: false
-    default: 'ghcr.io/epics-containers/pvxs:1.3.1r1.0'
+    default: 'ghcr.io/epics-containers/epics-base-runtime:7.0.10ec1'
   network-name:
     description: Docker bridge network for CA/PVA communication (docker method only)
     required: false
@@ -70,12 +70,16 @@ runs:
         ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect-arch.py")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
-        # Expose conda env's bin to subsequent bash steps.
-        # EPICS binaries live in the arch-specific subdirectory on conda-forge.
+        # conda-forge puts pvxs tools (pvxget, softIocPVX, …) in $CONDA_PREFIX/bin
+        # and epics-base CA tools (caget, softIocPVA, …) in $CONDA_PREFIX/epics/bin/$ARCH.
+        # Expose both to subsequent plain-bash steps.
         echo "${CONDA_PREFIX}/bin" >> "$GITHUB_PATH"
-        echo "${CONDA_PREFIX}/bin/${ARCH}" >> "$GITHUB_PATH"
+        echo "${CONDA_PREFIX}/epics/bin/${ARCH}" >> "$GITHUB_PATH"
+        echo "EPICS_BASE=${CONDA_PREFIX}/epics" >> "$GITHUB_ENV"
         if [ "$(uname)" = "Linux" ]; then
-          echo "LD_LIBRARY_PATH=${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=${CONDA_PREFIX}/epics/lib/${ARCH}:${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        else
+          echo "DYLD_LIBRARY_PATH=${CONDA_PREFIX}/epics/lib/${ARCH}:${CONDA_PREFIX}/lib:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         fi
 
     # ── docker ─────────────────────────────────────────────────────────────
@@ -98,7 +102,7 @@ runs:
         NETWORK: ${{ inputs.network-name }}
       run: |
         WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
-        for CMD in pvget pvput pvmonitor pvinfo softIocPVX; do
+        for CMD in pvxget pvxput pvxmonitor pvxinfo softIocPVX; do
           printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" "%s" "%s" "$@"\n' \
             "$NETWORK" "$IMAGE" "$CMD" > "$WRAPPERS/$CMD"
           chmod +x "$WRAPPERS/$CMD"
@@ -131,7 +135,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ inputs.install-prefix }}
-        key: pvxs-${{ inputs.pvxs-version || '1.5.1' }}-epics-${{ inputs.epics-version || '7.0.9' }}-${{ runner.os }}-${{ runner.arch }}
+        key: pvxs-${{ inputs.pvxs-version || '1.5.1' }}-epics-anl-${{ inputs.epics-version || '7.0.9' }}-${{ runner.os }}-${{ runner.arch }}
 
     - name: Compile pvxs
       if: inputs.method == 'compile'
@@ -140,12 +144,21 @@ runs:
         VERSION: ${{ inputs.pvxs-version || '1.5.1' }}
         PREFIX: ${{ inputs.install-prefix }}
       run: |
-        if [ ! -f "$PREFIX/bin/$EPICS_HOST_ARCH/pvget" ]; then
-          git clone --branch "$VERSION" \
-            https://github.com/mdavidsaver/pvxs.git
-          cmake -S pvxs -B pvxs/build \
-            -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-            -DEPICS_BASE="$PREFIX"
-          cmake --build pvxs/build --parallel
-          cmake --install pvxs/build
+        SRC="${PREFIX}/pvxs"
+        # pvxs is an EPICS module: build it against the epics-base source tree
+        # ($EPICS_BASE, set by setup-epics) using the bundled libevent submodule.
+        if [ ! -x "$SRC/bin/$EPICS_HOST_ARCH/pvxget" ]; then
+          rm -rf "$SRC"
+          git clone --branch "$VERSION" --recurse-submodules \
+            https://github.com/mdavidsaver/pvxs.git "$SRC"
+          echo "EPICS_BASE=${EPICS_BASE}" > "$SRC/configure/RELEASE.local"
+          make -C "$SRC/bundle" libevent
+          make -C "$SRC" -j"$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)"
+        fi
+        echo "${SRC}/bin/${EPICS_HOST_ARCH}" >> "$GITHUB_PATH"
+        BUNDLE_LIB="${SRC}/bundle/usr/${EPICS_HOST_ARCH}/lib"
+        if [ "$(uname)" = "Linux" ]; then
+          echo "LD_LIBRARY_PATH=${SRC}/lib/${EPICS_HOST_ARCH}:${BUNDLE_LIB}:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        else
+          echo "DYLD_LIBRARY_PATH=${SRC}/lib/${EPICS_HOST_ARCH}:${BUNDLE_LIB}:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         fi

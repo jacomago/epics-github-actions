@@ -35,14 +35,13 @@ Steps to update:
 
 ### Docker images
 
-The default images are:
-- `setup-epics`: `ghcr.io/epics-containers/epics-base:<tag>` — see [epics-containers packages](https://github.com/orgs/epics-containers/packages)
-- `setup-pvxs`: `ghcr.io/epics-containers/pvxs:<tag>` — see above
+Both actions use the same image, which bundles epics-base (CA tools + `softIocPVA`)
+and pvxs (`pvxget`, …, `softIocPVX`):
+- `ghcr.io/epics-containers/epics-base-runtime:<tag>` — see [epics-containers packages](https://github.com/orgs/epics-containers/packages)
 
 Before updating a tag, verify it exists on `ghcr.io/epics-containers`:
 ```bash
-docker pull ghcr.io/epics-containers/epics-base:<new-tag>
-docker pull ghcr.io/epics-containers/pvxs:<new-tag>
+docker pull ghcr.io/epics-containers/epics-base-runtime:<new-tag>
 ```
 
 Steps to update:

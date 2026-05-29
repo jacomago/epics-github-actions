@@ -30,7 +30,7 @@ Installs `epics-base`.
     environment-name: epics
 
     # docker options
-    image: 'ghcr.io/epics-containers/epics-base:7.0.8r1.0'
+    image: 'ghcr.io/epics-containers/epics-base-runtime:7.0.10ec1'
     network-name: epics-net
 
     # compile options
@@ -50,7 +50,7 @@ Additional variables per method:
 
 ### `setup-pvxs`
 
-Installs `epics-base` **and** `pvxs`. Adds `pvget`, `pvput`, `pvmonitor`, `pvinfo`, `softIocPVX`.
+Installs `epics-base` **and** `pvxs`. Adds `pvxget`, `pvxput`, `pvxmonitor`, `pvxinfo`, `softIocPVX`.
 
 ```yaml
 - uses: jacomago/epics-github-actions/setup-pvxs@v1
@@ -63,7 +63,7 @@ Installs `epics-base` **and** `pvxs`. Adds `pvget`, `pvput`, `pvmonitor`, `pvinf
     environment-name: epics
 
     # docker options
-    image: 'ghcr.io/epics-containers/pvxs:1.3.1r1.0'
+    image: 'ghcr.io/epics-containers/epics-base-runtime:7.0.10ec1'
     network-name: epics-net
 
     # compile options
