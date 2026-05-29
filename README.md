@@ -84,7 +84,6 @@ Starts a `softIocPVA` (or `softIocPVX`) instance and waits until it is ready. Pa
     method: conda            # must match setup-epics / setup-pvxs
     db-file: path/to/records.db
     macros: 'P=TEST:,R=REC:'
-    ioc-name: softioc
     use-pvxs: 'false'        # 'true' → softIocPVX (requires setup-pvxs)
     wait-pv: 'TEST:STATUS'   # poll this PV until the IOC is up (recommended)
     wait-timeout: '10'       # fallback sleep if wait-pv is not set

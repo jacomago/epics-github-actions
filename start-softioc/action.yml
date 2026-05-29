@@ -15,10 +15,6 @@ inputs:
     description: Macro string passed to -m (e.g. "P=TEST:,R=REC:")
     required: false
     default: ''
-  ioc-name:
-    description: IOC name passed to -n
-    required: false
-    default: 'softioc'
   use-pvxs:
     description: Use softIocPVX (pvxs) instead of softIocPVA
     required: false
@@ -49,15 +45,16 @@ runs:
       env:
         DB_FILE: ${{ inputs.db-file }}
         MACROS: ${{ inputs.macros }}
-        IOC_NAME: ${{ inputs.ioc-name }}
         USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
         BINARY="softIocPVA"
         [ "$USE_PVXS" = "true" ] && BINARY="softIocPVX"
 
-        ARGS=(-n "$IOC_NAME")
+        # -S runs a non-interactive IOC that spins forever (stays up in the
+        # background). -m macros apply to the -d database. softIoc has no -n.
+        ARGS=(-S)
         [ -n "$MACROS" ] && ARGS+=(-m "$MACROS")
-        ARGS+=("$DB_FILE")
+        ARGS+=(-d "$DB_FILE")
 
         "$BINARY" "${ARGS[@]}" > "$RUNNER_TEMP/softioc.log" 2>&1 &
         echo "SOFTIOC_PID=$!" >> "$GITHUB_ENV"
@@ -98,7 +95,6 @@ runs:
       env:
         DB_FILE: ${{ inputs.db-file }}
         MACROS: ${{ inputs.macros }}
-        IOC_NAME: ${{ inputs.ioc-name }}
         USE_PVXS: ${{ inputs.use-pvxs }}
         CONTAINER_NAME: ${{ inputs.container-name }}
       run: |
@@ -110,9 +106,9 @@ runs:
           IMAGE="${EPICS_DOCKER_IMAGE}"
         fi
 
-        ARGS=(-n "$IOC_NAME")
+        ARGS=(-S)
         [ -n "$MACROS" ] && ARGS+=(-m "$MACROS")
-        ARGS+=(/db/ioc.db)
+        ARGS+=(-d /db/ioc.db)
 
         [[ "$DB_FILE" = /* ]] && ABS_DB="$DB_FILE" || ABS_DB="$PWD/$DB_FILE"
 
