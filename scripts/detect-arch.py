@@ -7,4 +7,7 @@ mapping = {
     ('Darwin', 'x86_64'):  'darwin-x86_64',
     ('Darwin', 'arm64'):   'darwin-aarch64',
 }
-print(mapping.get((s, m), f'{s.lower()}-{m}'))
+arch = mapping.get((s, m))
+if arch is None:
+    raise SystemExit(f"Unsupported platform: {s}-{m}. Add it to scripts/detect-arch.py.")
+print(arch)
