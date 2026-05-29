@@ -106,7 +106,7 @@ runs:
           BINARY="softIocPVX"
           IMAGE="${DOCKER_IMAGE:-${PVXS_DOCKER_IMAGE:-${EPICS_DOCKER_IMAGE}}}"
         else
-          BINARY="softIocPVA"
+          BINARY="softIoc"
           IMAGE="${DOCKER_IMAGE:-${EPICS_DOCKER_IMAGE}}"
         fi
         NETWORK="${DOCKER_NETWORK:-${EPICS_DOCKER_NETWORK}}"
