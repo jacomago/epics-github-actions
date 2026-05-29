@@ -69,7 +69,7 @@ runs:
       id: arch-conda
       shell: micromamba-shell {0}
       run: |
-        ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect-arch.py")
+        ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect_arch.py")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
         # conda-forge puts pvxs tools (pvxget, softIocPVX, …) in $CONDA_PREFIX/bin
@@ -80,7 +80,7 @@ runs:
         echo "EPICS_BASE=${CONDA_PREFIX}/epics" >> "$GITHUB_ENV"
         # conda-forge patches softIocPVX to locate its dbd/db via $PVXS.
         echo "PVXS=${CONDA_PREFIX}/pvxs/" >> "$GITHUB_ENV"
-        "$GITHUB_ACTION_PATH/../scripts/export-lib-paths.sh" \
+        python "$GITHUB_ACTION_PATH/../scripts/export_lib_paths.py" \
           "${CONDA_PREFIX}/epics/lib/${ARCH}" "${CONDA_PREFIX}/lib"
 
     # ── docker ─────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ runs:
         NETWORK: ${{ inputs.network-name }}
       run: |
         WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
-        "$GITHUB_ACTION_PATH/../scripts/make-docker-wrappers.sh" \
+        python "$GITHUB_ACTION_PATH/../scripts/make_docker_wrappers.py" \
           "$WRAPPERS" "$NETWORK" "$IMAGE" \
           pvxget pvxput pvxmonitor pvxinfo softIocPVX
         echo "PVXS_DOCKER_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
@@ -156,5 +156,5 @@ runs:
         fi
         echo "${SRC}/bin/${EPICS_HOST_ARCH}" >> "$GITHUB_PATH"
         BUNDLE_LIB="${SRC}/bundle/usr/${EPICS_HOST_ARCH}/lib"
-        "$GITHUB_ACTION_PATH/../scripts/export-lib-paths.sh" \
+        python "$GITHUB_ACTION_PATH/../scripts/export_lib_paths.py" \
           "${SRC}/lib/${EPICS_HOST_ARCH}" "${BUNDLE_LIB}"

@@ -62,11 +62,31 @@ The following third-party actions are used across the workflow files and composi
 
 When bumping a version, update **all** files listed above consistently.
 
-## Running tests
+## Testing scripts
+
+All helper scripts live in `scripts/` as Python modules. Each one exposes an
+importable function plus a `__main__` block for CLI use. This lets the YAML
+actions call `python scripts/foo.py arg...` while tests import and call the
+function directly.
+
+To run the unit tests locally:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-test.txt
+python -m pytest tests/ -v
+```
+
+When adding or changing a script:
+- Keep the importable function as the primary implementation.
+- Add tests in `tests/test_<script_name>.py` that cover the new behaviour.
+- Use `tmp_path` for file I/O and `monkeypatch` for platform/env differences.
+
+## Running integration tests
 
 The CI is split into three workflows:
 
-- **`test.yml`** — triggers on every pull request; runs the full matrix (conda + compile + docker × ubuntu + macOS). Open a draft PR to trigger this.
+- **`test.yml`** — triggers on every pull request; runs the full matrix (conda + compile + docker × ubuntu + macOS) plus the script unit tests. Open a draft PR to trigger this.
 - **`push.yml`** — triggers on push to `main`; runs a fast conda smoke test only.
 - **`release.yml`** — triggers on tag push (`v*`); runs the full matrix and creates a GitHub Release.
 

@@ -87,7 +87,7 @@ runs:
       run: |
         POLL="caget"
         [ "$USE_PVXS" = "true" ] && POLL="pvxget"
-        "$GITHUB_ACTION_PATH/../scripts/wait-for-pv.sh" \
+        python "$GITHUB_ACTION_PATH/../scripts/wait_for_pv.py" \
           "$POLL" "$WAIT_PV" "$POLL_TIMEOUT" "$WAIT_TIMEOUT" "$RUNNER_TEMP/softioc.log"
 
     # ── docker ─────────────────────────────────────────────────────────────
@@ -144,5 +144,5 @@ runs:
       run: |
         POLL="caget"
         [ "$USE_PVXS" = "true" ] && POLL="pvxget"
-        "$GITHUB_ACTION_PATH/../scripts/wait-for-pv.sh" \
+        python "$GITHUB_ACTION_PATH/../scripts/wait_for_pv.py" \
           "$POLL" "$WAIT_PV" "$POLL_TIMEOUT" "$WAIT_TIMEOUT"

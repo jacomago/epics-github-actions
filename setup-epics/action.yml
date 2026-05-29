@@ -67,7 +67,7 @@ runs:
       id: arch-conda
       shell: micromamba-shell {0}
       run: |
-        ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect-arch.py")
+        ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect_arch.py")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
         # conda-forge installs epics-base under $CONDA_PREFIX/epics, with the CA
@@ -76,7 +76,7 @@ runs:
         echo "${CONDA_PREFIX}/bin" >> "$GITHUB_PATH"
         echo "${CONDA_PREFIX}/epics/bin/${ARCH}" >> "$GITHUB_PATH"
         echo "EPICS_BASE=${CONDA_PREFIX}/epics" >> "$GITHUB_ENV"
-        "$GITHUB_ACTION_PATH/../scripts/export-lib-paths.sh" \
+        python "$GITHUB_ACTION_PATH/../scripts/export_lib_paths.py" \
           "${CONDA_PREFIX}/epics/lib/${ARCH}" "${CONDA_PREFIX}/lib"
 
     # ── docker + compile ───────────────────────────────────────────────────
@@ -85,7 +85,7 @@ runs:
       id: arch-native
       shell: bash
       run: |
-        ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect-arch.py")
+        ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect_arch.py")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
 
@@ -110,7 +110,7 @@ runs:
         NETWORK: ${{ inputs.network-name }}
       run: |
         WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
-        "$GITHUB_ACTION_PATH/../scripts/make-docker-wrappers.sh" \
+        python "$GITHUB_ACTION_PATH/../scripts/make_docker_wrappers.py" \
           "$WRAPPERS" "$NETWORK" "$IMAGE" \
           caget caput camonitor cainfo softIoc softIocPVA
         echo "$WRAPPERS" >> "$GITHUB_PATH"
@@ -154,4 +154,4 @@ runs:
         fi
         echo "EPICS_BASE=${SRC}" >> "$GITHUB_ENV"
         echo "${SRC}/bin/${EPICS_HOST_ARCH}" >> "$GITHUB_PATH"
-        "$GITHUB_ACTION_PATH/../scripts/export-lib-paths.sh" "${SRC}/lib/${EPICS_HOST_ARCH}"
+        python "$GITHUB_ACTION_PATH/../scripts/export_lib_paths.py" "${SRC}/lib/${EPICS_HOST_ARCH}"
