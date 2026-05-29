@@ -112,7 +112,7 @@ runs:
         WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
         "$GITHUB_ACTION_PATH/../scripts/make-docker-wrappers.sh" \
           "$WRAPPERS" "$NETWORK" "$IMAGE" \
-          caget caput camonitor cainfo softIocPVA
+          caget caput camonitor cainfo softIoc softIocPVA
         echo "$WRAPPERS" >> "$GITHUB_PATH"
 
     # ── compile ────────────────────────────────────────────────────────────
