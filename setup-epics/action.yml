@@ -67,7 +67,7 @@ runs:
       id: arch-conda
       shell: micromamba-shell {0}
       run: |
-        ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect-arch.py")
+        ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect_arch.py")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
         # conda-forge installs epics-base under $CONDA_PREFIX/epics, with the CA
@@ -76,11 +76,8 @@ runs:
         echo "${CONDA_PREFIX}/bin" >> "$GITHUB_PATH"
         echo "${CONDA_PREFIX}/epics/bin/${ARCH}" >> "$GITHUB_PATH"
         echo "EPICS_BASE=${CONDA_PREFIX}/epics" >> "$GITHUB_ENV"
-        if [ "$(uname)" = "Linux" ]; then
-          echo "LD_LIBRARY_PATH=${CONDA_PREFIX}/epics/lib/${ARCH}:${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-        else
-          echo "DYLD_LIBRARY_PATH=${CONDA_PREFIX}/epics/lib/${ARCH}:${CONDA_PREFIX}/lib:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-        fi
+        python "$GITHUB_ACTION_PATH/../scripts/export_lib_paths.py" \
+          "${CONDA_PREFIX}/epics/lib/${ARCH}" "${CONDA_PREFIX}/lib"
 
     # ── docker + compile ───────────────────────────────────────────────────
     - name: Detect EPICS_HOST_ARCH
@@ -88,13 +85,7 @@ runs:
       id: arch-native
       shell: bash
       run: |
-        case "$(uname -s)-$(uname -m)" in
-          Linux-x86_64)   ARCH=linux-x86_64 ;;
-          Linux-aarch64)  ARCH=linux-aarch64 ;;
-          Darwin-x86_64)  ARCH=darwin-x86_64 ;;
-          Darwin-arm64)   ARCH=darwin-aarch64 ;;
-          *)              ARCH="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)" ;;
-        esac
+        ARCH=$(python "$GITHUB_ACTION_PATH/../scripts/detect_arch.py")
         echo "EPICS_HOST_ARCH=${ARCH}" >> "$GITHUB_ENV"
         echo "epics-host-arch=${ARCH}" >> "$GITHUB_OUTPUT"
 
@@ -119,16 +110,9 @@ runs:
         NETWORK: ${{ inputs.network-name }}
       run: |
         WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
-        mkdir -p "$WRAPPERS"
-        # Forward EPICS addressing into the client container: Docker bridge
-        # networks don't deliver CA/PVA broadcast, so start-softioc sets these
-        # to the IOC container name for unicast discovery.
-        ENVFWD='-e EPICS_CA_AUTO_ADDR_LIST -e EPICS_CA_ADDR_LIST -e EPICS_PVA_AUTO_ADDR_LIST -e EPICS_PVA_ADDR_LIST'
-        for CMD in caget caput camonitor cainfo softIoc; do
-          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" %s "%s" "%s" "$@"\n' \
-            "$NETWORK" "$ENVFWD" "$IMAGE" "$CMD" > "$WRAPPERS/$CMD"
-          chmod +x "$WRAPPERS/$CMD"
-        done
+        python "$GITHUB_ACTION_PATH/../scripts/make_docker_wrappers.py" \
+          "$WRAPPERS" "$NETWORK" "$IMAGE" \
+          caget caput camonitor cainfo softIoc softIocPVA
         echo "$WRAPPERS" >> "$GITHUB_PATH"
 
     # ── compile ────────────────────────────────────────────────────────────
@@ -170,8 +154,4 @@ runs:
         fi
         echo "EPICS_BASE=${SRC}" >> "$GITHUB_ENV"
         echo "${SRC}/bin/${EPICS_HOST_ARCH}" >> "$GITHUB_PATH"
-        if [ "$(uname)" = "Linux" ]; then
-          echo "LD_LIBRARY_PATH=${SRC}/lib/${EPICS_HOST_ARCH}:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-        else
-          echo "DYLD_LIBRARY_PATH=${SRC}/lib/${EPICS_HOST_ARCH}:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-        fi
+        python "$GITHUB_ACTION_PATH/../scripts/export_lib_paths.py" "${SRC}/lib/${EPICS_HOST_ARCH}"

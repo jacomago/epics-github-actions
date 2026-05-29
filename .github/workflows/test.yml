@@ -98,3 +98,12 @@ jobs:
       - name: Read test PVs via PVA
         shell: bash
         run: pvxget PVXS:AI PVXS:BI PVXS:STR PVXS:WF
+
+  # ── unit tests for helper scripts ──────────────────────────────────────
+  test-scripts:
+    name: Unit-test helper scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -r requirements-test.txt
+      - run: python -m pytest tests/ -v
