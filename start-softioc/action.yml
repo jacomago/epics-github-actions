@@ -27,10 +27,26 @@ inputs:
     description: Seconds to sleep when wait-pv is not set
     required: false
     default: '10'
+  poll-timeout:
+    description: Seconds to poll wait-pv before giving up
+    required: false
+    default: '30'
   container-name:
     description: Docker container name (docker method only)
     required: false
     default: 'softioc'
+  docker-image:
+    description: >-
+      Docker image to use (docker method). Defaults to PVXS_DOCKER_IMAGE or
+      EPICS_DOCKER_IMAGE set by setup-pvxs / setup-epics.
+    required: false
+    default: ''
+  docker-network:
+    description: >-
+      Docker network name (docker method). Defaults to EPICS_DOCKER_NETWORK
+      set by setup-epics.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -47,7 +63,7 @@ runs:
         MACROS: ${{ inputs.macros }}
         USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
-        BINARY="softIoc"
+        BINARY="softIocPVA"
         [ "$USE_PVXS" = "true" ] && BINARY="softIocPVX"
 
         # -S runs a non-interactive IOC that spins forever (stays up in the
@@ -66,27 +82,13 @@ runs:
       env:
         WAIT_PV: ${{ inputs.wait-pv }}
         WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+        POLL_TIMEOUT: ${{ inputs.poll-timeout }}
         USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
-        # softIocPVX serves PVA only, so poll with pvxget; softIocPVA serves CA.
         POLL="caget"
         [ "$USE_PVXS" = "true" ] && POLL="pvxget"
-        if [ -n "$WAIT_PV" ]; then
-          echo "Polling PV: $WAIT_PV"
-          for i in $(seq 1 30); do
-            if "$POLL" -w 1 "$WAIT_PV" > /dev/null 2>&1; then
-              echo "IOC ready after ${i}s"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "::error::IOC did not become ready within 30s"
-          cat "$RUNNER_TEMP/softioc.log"
-          exit 1
-        else
-          echo "No wait-pv specified, sleeping ${WAIT_TIMEOUT}s"
-          sleep "$WAIT_TIMEOUT"
-        fi
+        "$GITHUB_ACTION_PATH/../scripts/wait-for-pv.sh" \
+          "$POLL" "$WAIT_PV" "$POLL_TIMEOUT" "$WAIT_TIMEOUT" "$RUNNER_TEMP/softioc.log"
 
     # ── docker ─────────────────────────────────────────────────────────────
     - name: Start softIoc container
@@ -97,14 +99,17 @@ runs:
         MACROS: ${{ inputs.macros }}
         USE_PVXS: ${{ inputs.use-pvxs }}
         CONTAINER_NAME: ${{ inputs.container-name }}
+        DOCKER_IMAGE: ${{ inputs.docker-image }}
+        DOCKER_NETWORK: ${{ inputs.docker-network }}
       run: |
         if [ "$USE_PVXS" = "true" ]; then
           BINARY="softIocPVX"
-          IMAGE="${PVXS_DOCKER_IMAGE:-${EPICS_DOCKER_IMAGE}}"
+          IMAGE="${DOCKER_IMAGE:-${PVXS_DOCKER_IMAGE:-${EPICS_DOCKER_IMAGE}}}"
         else
-          BINARY="softIoc"
-          IMAGE="${EPICS_DOCKER_IMAGE}"
+          BINARY="softIocPVA"
+          IMAGE="${DOCKER_IMAGE:-${EPICS_DOCKER_IMAGE}}"
         fi
+        NETWORK="${DOCKER_NETWORK:-${EPICS_DOCKER_NETWORK}}"
 
         ARGS=(-S)
         [ -n "$MACROS" ] && ARGS+=(-m "$MACROS")
@@ -114,15 +119,13 @@ runs:
 
         docker run -d \
           --name "$CONTAINER_NAME" \
-          --network "$EPICS_DOCKER_NETWORK" \
+          --network "$NETWORK" \
           -v "${ABS_DB}:/db/ioc.db:ro" \
           "$IMAGE" "$BINARY" "${ARGS[@]}"
 
         echo "SOFTIOC_CONTAINER=${CONTAINER_NAME}" >> "$GITHUB_ENV"
         echo "Started $BINARY container '$CONTAINER_NAME'"
 
-        # Docker bridge networks don't deliver CA/PVA broadcast, so point
-        # clients at the IOC container by name (resolved via Docker DNS).
         {
           echo "EPICS_CA_AUTO_ADDR_LIST=NO"
           echo "EPICS_CA_ADDR_LIST=${CONTAINER_NAME}"
@@ -136,24 +139,10 @@ runs:
       env:
         WAIT_PV: ${{ inputs.wait-pv }}
         WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+        POLL_TIMEOUT: ${{ inputs.poll-timeout }}
         USE_PVXS: ${{ inputs.use-pvxs }}
       run: |
-        # softIocPVX serves PVA only, so poll with pvxget; softIocPVA serves CA.
         POLL="caget"
         [ "$USE_PVXS" = "true" ] && POLL="pvxget"
-        if [ -n "$WAIT_PV" ]; then
-          echo "Polling PV: $WAIT_PV"
-          for i in $(seq 1 30); do
-            if "$POLL" -w 1 "$WAIT_PV" > /dev/null 2>&1; then
-              echo "IOC ready after ${i}s"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "::error::IOC did not become ready within 30s"
-          docker logs "$SOFTIOC_CONTAINER" || true
-          exit 1
-        else
-          echo "No wait-pv specified, sleeping ${WAIT_TIMEOUT}s"
-          sleep "$WAIT_TIMEOUT"
-        fi
+        "$GITHUB_ACTION_PATH/../scripts/wait-for-pv.sh" \
+          "$POLL" "$WAIT_PV" "$POLL_TIMEOUT" "$WAIT_TIMEOUT"

@@ -80,11 +80,8 @@ runs:
         echo "EPICS_BASE=${CONDA_PREFIX}/epics" >> "$GITHUB_ENV"
         # conda-forge patches softIocPVX to locate its dbd/db via $PVXS.
         echo "PVXS=${CONDA_PREFIX}/pvxs/" >> "$GITHUB_ENV"
-        if [ "$(uname)" = "Linux" ]; then
-          echo "LD_LIBRARY_PATH=${CONDA_PREFIX}/epics/lib/${ARCH}:${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-        else
-          echo "DYLD_LIBRARY_PATH=${CONDA_PREFIX}/epics/lib/${ARCH}:${CONDA_PREFIX}/lib:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-        fi
+        "$GITHUB_ACTION_PATH/../scripts/export-lib-paths.sh" \
+          "${CONDA_PREFIX}/epics/lib/${ARCH}" "${CONDA_PREFIX}/lib"
 
     # ── docker ─────────────────────────────────────────────────────────────
     # Reuse setup-epics to pull the image, create the network, detect arch,
@@ -106,12 +103,9 @@ runs:
         NETWORK: ${{ inputs.network-name }}
       run: |
         WRAPPERS="${RUNNER_TEMP}/epics-wrappers"
-        ENVFWD='-e EPICS_CA_AUTO_ADDR_LIST -e EPICS_CA_ADDR_LIST -e EPICS_PVA_AUTO_ADDR_LIST -e EPICS_PVA_ADDR_LIST'
-        for CMD in pvxget pvxput pvxmonitor pvxinfo softIocPVX; do
-          printf '#!/usr/bin/env bash\nexec docker run --rm --network "%s" %s "%s" "%s" "$@"\n' \
-            "$NETWORK" "$ENVFWD" "$IMAGE" "$CMD" > "$WRAPPERS/$CMD"
-          chmod +x "$WRAPPERS/$CMD"
-        done
+        "$GITHUB_ACTION_PATH/../scripts/make-docker-wrappers.sh" \
+          "$WRAPPERS" "$NETWORK" "$IMAGE" \
+          pvxget pvxput pvxmonitor pvxinfo softIocPVX
         echo "PVXS_DOCKER_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
 
     # ── compile ────────────────────────────────────────────────────────────
@@ -162,8 +156,5 @@ runs:
         fi
         echo "${SRC}/bin/${EPICS_HOST_ARCH}" >> "$GITHUB_PATH"
         BUNDLE_LIB="${SRC}/bundle/usr/${EPICS_HOST_ARCH}/lib"
-        if [ "$(uname)" = "Linux" ]; then
-          echo "LD_LIBRARY_PATH=${SRC}/lib/${EPICS_HOST_ARCH}:${BUNDLE_LIB}:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-        else
-          echo "DYLD_LIBRARY_PATH=${SRC}/lib/${EPICS_HOST_ARCH}:${BUNDLE_LIB}:${DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-        fi
+        "$GITHUB_ACTION_PATH/../scripts/export-lib-paths.sh" \
+          "${SRC}/lib/${EPICS_HOST_ARCH}" "${BUNDLE_LIB}"
