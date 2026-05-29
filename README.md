@@ -42,7 +42,7 @@ Installs `epics-base`.
 **Environment variables set for all methods:** `EPICS_HOST_ARCH`
 
 Additional variables per method:
-- `conda`: `LD_LIBRARY_PATH` (Linux only)
+- `conda`: `EPICS_BASE`, `LD_LIBRARY_PATH` (Linux only)
 - `docker`: `EPICS_DOCKER_IMAGE`, `EPICS_DOCKER_NETWORK`
 - `compile`: `EPICS_BASE`, `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH`
 
@@ -72,11 +72,18 @@ Installs `epics-base` **and** `pvxs`. Adds `pvxget`, `pvxput`, `pvxmonitor`, `pv
 
 **Outputs:** `epics-host-arch`
 
+**Environment variables set for all methods:** `EPICS_HOST_ARCH`
+
+Additional variables per method:
+- `conda`: `EPICS_BASE`, `PVXS`, `LD_LIBRARY_PATH` (Linux only)
+- `docker`: `EPICS_DOCKER_IMAGE`, `EPICS_DOCKER_NETWORK`, `PVXS_DOCKER_IMAGE`
+- `compile`: `EPICS_BASE`, `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH`
+
 ---
 
 ### `start-softioc`
 
-Starts a `softIoc` (or `softIocPVX`) instance and waits until it is ready. Pass the same `method` as used in `setup-epics` / `setup-pvxs`.
+Starts a `softIocPVA` (or `softIocPVX`) instance and waits until it is ready. Pass the same `method` as used in `setup-epics` / `setup-pvxs`.
 
 ```yaml
 - uses: jacomago/epics-github-actions/start-softioc@v1
@@ -87,10 +94,19 @@ Starts a `softIoc` (or `softIocPVX`) instance and waits until it is ready. Pass 
     use-pvxs: 'false'        # 'true' → softIocPVX (requires setup-pvxs)
     wait-pv: 'TEST:STATUS'   # poll this PV until the IOC is up (recommended)
     wait-timeout: '10'       # fallback sleep if wait-pv is not set
-    container-name: softioc  # docker method only
+    poll-timeout: '30'       # seconds to poll wait-pv before giving up
+
+    # docker method only
+    container-name: softioc
+    docker-image: ''         # defaults to PVXS_DOCKER_IMAGE / EPICS_DOCKER_IMAGE
+    docker-network: ''       # defaults to EPICS_DOCKER_NETWORK
 ```
 
-`wait-pv` is recommended — polls `caget` up to 30 s instead of a fixed sleep.
+`wait-pv` is recommended — polls up to `poll-timeout` seconds (default 30) instead of a fixed sleep.
+
+When `method: docker`, `start-softioc` also sets `EPICS_CA_AUTO_ADDR_LIST=NO`,
+`EPICS_CA_ADDR_LIST`, `EPICS_PVA_AUTO_ADDR_LIST`, and `EPICS_PVA_ADDR_LIST` to
+restrict channel access to the IOC container.
 
 ---
 
